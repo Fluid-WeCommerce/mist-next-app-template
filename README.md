@@ -9,12 +9,14 @@ customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 
 | Path | Purpose |
 | --- | --- |
-| `app/page.tsx` | Landing page; renders the visitor's Fluid identity in production. |
-| `app/api/auth/[...fluid]/route.ts` | The two-step Fluid auth handshake (`/start` and `/callback`). |
+| `app/page.tsx` | Public landing page; renders the visitor's Fluid identity if a session exists, otherwise links them to `/droplet/connect`. |
+| `app/droplet/connect/route.ts` | Starts the Fluid auth handshake — visitors hit this when they want to sign in. |
+| `app/api/auth/[...fluid]/route.ts` | The auth callback that validates Fluid's JWT and sets the session cookie. |
 | `app/api/health/route.ts` | `/api/health` runs `SELECT 1` against the database — useful for monitoring. |
 | `lib/db.ts` | Environment-aware Postgres client: [PGlite](https://github.com/electric-sql/pglite) in local dev, [Neon](https://neon.tech) serverless in production. Same Drizzle interface either way. |
-| `lib/fluid-session.ts` | `getFluidSession()` reads the session cookie set by the auth handler. |
-| `middleware.ts` | Gates page routes on a valid session in production; bypassed in local dev. |
+| `lib/fluid-session.ts` | `getFluidSession()` reads the session cookie set by the auth handler — call it from any page or route that needs the visitor's identity. |
+
+There is no global auth gate. Every page is public by default; add a `getFluidSession()` check (and redirect to `/droplet/connect` if `null`) in the routes you want gated.
 
 ## Local development
 
@@ -23,9 +25,11 @@ npm install
 npm run dev
 ```
 
-`npm run dev` sets `MIST_DEV=1` and runs the app against a local PGlite
-database (`./local.db`). **No Postgres install required.** Auth is bypassed
-in dev so you can iterate without the full Fluid handshake.
+`npm run dev` runs the app against a local PGlite database (`./local.db`).
+**No Postgres install required.** The home page renders without auth, so
+you can iterate immediately. To exercise the Fluid handshake locally, set
+`FLUID_BASE_URL`, `FLUID_DROPLET_UUID`, and `FLUID_DROPLET_SECRET` and
+visit [`/droplet/connect`](http://localhost:3000/droplet/connect).
 
 Open [http://localhost:3000](http://localhost:3000).
 

@@ -10,12 +10,13 @@ export default async function Home() {
       {session ? (
         <p>
           Signed in as <strong>{session.user_name}</strong> at{" "}
-          <strong>{session.company_name}</strong>.
+          <strong>{session.company_name}</strong>.{" "}
+          <a href="/droplet/connect">Reconnect</a>
         </p>
       ) : (
         <p>
-          Running in <code>MIST_DEV</code> mode — auth is bypassed locally. In production
-          this page renders the visitor&apos;s Fluid identity.
+          <a href="/droplet/connect">Connect your Fluid account</a> to identify the visitor.
+          The home page is public — only the routes you choose to gate require a session.
         </p>
       )}
 
@@ -26,20 +27,22 @@ export default async function Home() {
           Neon in production).
         </li>
         <li>
-          <code>app/api/auth/[...fluid]/route.ts</code> — Fluid droplet auth handshake.
+          <code>app/droplet/connect/route.ts</code> — starts the Fluid auth handshake.
+        </li>
+        <li>
+          <code>app/api/auth/[...fluid]/route.ts</code> — Fluid auth callback that sets
+          the session cookie.
         </li>
         <li>
           <code>app/api/health/route.ts</code> — try{" "}
           <a href="/api/health">/api/health</a> right now.
-        </li>
-        <li>
-          <code>middleware.ts</code> — gates pages on a session in production.
         </li>
       </ul>
 
       <h2>Next steps</h2>
       <ol>
         <li>Edit <code>app/page.tsx</code>.</li>
+        <li>Call <code>getFluidSession()</code> from any route or page that needs the visitor&apos;s identity.</li>
         <li><code>fluid droplet mist push</code> when you&apos;re happy.</li>
       </ol>
     </main>
