@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mist Next.js Template
 
-## Getting Started
+The starter Next.js application that Fluid Commerce uses to scaffold new
+[Mist](https://fluid.app)-hosted droplets, embeds, and drop zones. This repo
+is marked as a **GitHub template repository** — Mist creates each new
+customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 
-First, run the development server:
+## What's in here
+
+| Path | Purpose |
+| --- | --- |
+| `app/page.tsx` | Landing page; renders the visitor's Fluid identity in production. |
+| `app/api/auth/[...fluid]/route.ts` | The two-step Fluid auth handshake (`/start` and `/callback`). |
+| `app/api/health/route.ts` | `/api/health` runs `SELECT 1` against the database — useful for monitoring. |
+| `lib/db.ts` | Environment-aware Postgres client: [PGlite](https://github.com/electric-sql/pglite) in local dev, [Neon](https://neon.tech) serverless in production. Same Drizzle interface either way. |
+| `lib/fluid-session.ts` | `getFluidSession()` reads the session cookie set by the auth handler. |
+| `middleware.ts` | Gates page routes on a valid session in production; bypassed in local dev. |
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`npm run dev` sets `MIST_DEV=1` and runs the app against a local PGlite
+database (`./local.db`). **No Postgres install required.** Auth is bypassed
+in dev so you can iterate without the full Fluid handshake.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open [http://localhost:3000](http://localhost:3000).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Production deployment
 
-## Learn More
+Mist provisions you a Vercel project linked to your customer repo. The
+project's env vars are set automatically:
 
-To learn more about Next.js, take a look at the following resources:
+| Env var | Set by Mist |
+| --- | --- |
+| `DATABASE_URL` | The Neon connection string for your dedicated Postgres. |
+| `FLUID_DROPLET_UUID` | The droplet's UUID — used by the auth handler. |
+| `FLUID_DROPLET_SECRET` | HMAC signing key for verifying Fluid-issued JWTs (Phase 002). |
+| `FLUID_BASE_URL` | The Fluid app's base URL. |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Push to `main` and Vercel deploys automatically. The Mist CLI (`fluid
+droplet mist push`) handles the git plumbing for you.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Updating this template
 
-## Deploy on Vercel
+Edits here only affect **new** droplets created after the change. Existing
+customer repos are independent snapshots — they don't track this template
+after creation. If a customer wants to pull template improvements into an
+existing droplet, they can add this repo as a git remote and cherry-pick.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT (or whatever Fluid prefers).

@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# PGlite local-dev database (used by `npm run dev`)
+local.db
+local.db-*
