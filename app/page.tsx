@@ -23,7 +23,7 @@ export default async function Home() {
         }}
       >
         <h1 style={{ marginBottom: "0.5rem", fontSize: "2rem" }}>
-          Hello from your Mist-hosted droplet 🌫️
+          Hello from your Mist — Fluid&apos;s lite cloud 🌫️
         </h1>
 
         {session ? (
