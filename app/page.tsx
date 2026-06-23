@@ -54,7 +54,11 @@ export default async function Home() {
             the session cookie.
           </li>
           <li>
-            <code>app/api/health/route.ts</code> — try{" "}
+            <code>lib/fluid.ts</code> — creates the Fluid SDK client for server-side OAuth
+            and App Bridge session-token exchange.
+          </li>
+          <li>
+            <code>app/api/health</code> — try{" "}
             <a href="/api/health" style={{ color: "#ffd6a8" }}>/api/health</a> right now.
           </li>
         </ul>
@@ -63,6 +67,7 @@ export default async function Home() {
         <ol>
           <li>Edit <code>app/page.tsx</code>.</li>
           <li>Call <code>getFluidSession()</code> from any route or page that needs the visitor&apos;s identity.</li>
+          <li>Call <code>fluid()</code> from server routes when you need Fluid OAuth-backed API access.</li>
           <li><code>fluid mist push</code> when you&apos;re happy.</li>
         </ol>
       </main>

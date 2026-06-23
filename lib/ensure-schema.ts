@@ -29,6 +29,14 @@ export function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);
+
+    await conn.execute(sql`
+      CREATE TABLE IF NOT EXISTS fluid_oauth_refresh_tokens (
+        credential_key            TEXT PRIMARY KEY,
+        refresh_token_ciphertext  TEXT NOT NULL,
+        updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
   })().catch((err) => {
     // Don't cache a failed bootstrap — let the next call retry.
     _ready = null;

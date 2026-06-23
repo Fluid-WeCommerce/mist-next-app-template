@@ -13,7 +13,9 @@ customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 | `app/droplet/connect/route.ts` | Starts the Fluid auth handshake — visitors hit this when they want to sign in. |
 | `app/api/auth/[...fluid]/route.ts` | The auth callback that validates Fluid's JWT and sets the session cookie. |
 | `app/api/health/route.ts` | `/api/health` runs `SELECT 1` against the database — useful for monitoring. |
+| `app/api/fluid/session-token/route.ts` | Server-side Fluid App Bridge session-token exchange backed by `@fluid-commerce/sdk/next`. |
 | `lib/db.ts` | Environment-aware Postgres client: [PGlite](https://github.com/electric-sql/pglite) in local dev, [Neon](https://neon.tech) serverless in production. Same Drizzle interface either way. |
+| `lib/fluid.ts` | Creates the Next.js Fluid SDK client, handles OAuth client credentials, and stores encrypted refresh tokens in the app database. |
 | `lib/fluid-session.ts` | `getFluidSession()` reads the session cookie set by the auth handler — call it from any page or route that needs the visitor's identity. |
 
 There is no global auth gate. Every page is public by default; add a `getFluidSession()` check (and redirect to `/droplet/connect` if `null`) in the routes you want gated.
@@ -31,6 +33,11 @@ you can iterate immediately. To exercise the Fluid handshake locally, set
 `FLUID_BASE_URL`, `FLUID_DROPLET_UUID`, and `FLUID_DROPLET_SECRET` and
 visit [`/droplet/connect`](http://localhost:3000/droplet/connect).
 
+To exercise SDK-backed server requests and App Bridge session-token exchange,
+also set `FLUID_CLIENT_ID`, `FLUID_CLIENT_SECRET`, and
+`FLUID_SDK_ENCRYPTION_KEY`. The encryption key protects persisted OAuth
+refresh tokens in the local PGlite or production Neon database.
+
 Open [http://localhost:3000](http://localhost:3000).
 
 ## Production deployment
@@ -44,6 +51,9 @@ project's env vars are set automatically:
 | `FLUID_DROPLET_UUID` | The droplet's UUID — used by the auth handler. |
 | `FLUID_DROPLET_SECRET` | HMAC signing key for verifying Fluid-issued JWTs (Phase 002). |
 | `FLUID_BASE_URL` | The Fluid app's base URL. |
+| `FLUID_CLIENT_ID` | OAuth client ID for server-side SDK requests. |
+| `FLUID_CLIENT_SECRET` | OAuth client secret for server-side SDK requests. |
+| `FLUID_SDK_ENCRYPTION_KEY` | App-owned secret used to encrypt persisted OAuth refresh tokens. |
 
 Push to `main` and Vercel deploys automatically. The Mist CLI (`fluid
 droplet mist push`) handles the git plumbing for you.
