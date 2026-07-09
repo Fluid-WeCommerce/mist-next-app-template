@@ -6,7 +6,7 @@
 //   X-Fluid-Shop:      the fluid_shop identifier of the sending company
 //   AUTH_TOKEN:        legacy shared-secret header (fallback)
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { hmacSha256, timingSafeEqualBuffers } from "./crypto";
 
 // Reject signatures older than this to blunt replay attacks.
 const MAX_SIGNATURE_AGE_SECONDS = 300;
@@ -47,20 +47,16 @@ export function verifyWebhookSignature(
   }
 
   // Fluid signs "{timestamp}.{body}".
-  const signedPayload = `${timestamp}.${body}`;
-  const expectedSignature = createHmac("sha256", secret).update(signedPayload).digest("hex");
+  const expected = hmacSha256(secret, `${timestamp}.${body}`);
 
+  let provided: Buffer;
   try {
-    const signatureBuffer = Buffer.from(signature, "hex");
-    const expectedBuffer = Buffer.from(expectedSignature, "hex");
-    if (signatureBuffer.length !== expectedBuffer.length) {
-      return { valid: false, error: "Invalid signature" };
-    }
-    if (!timingSafeEqual(signatureBuffer, expectedBuffer)) {
-      return { valid: false, error: "Invalid signature" };
-    }
+    provided = Buffer.from(signature, "hex");
   } catch {
     return { valid: false, error: "Invalid signature format" };
+  }
+  if (!timingSafeEqualBuffers(provided, expected)) {
+    return { valid: false, error: "Invalid signature" };
   }
 
   return { valid: true };
@@ -68,14 +64,7 @@ export function verifyWebhookSignature(
 
 // Constant-time comparison for shared-secret token checks.
 export function tokensMatch(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) {
-    // Still run a comparison to keep timing roughly constant.
-    timingSafeEqual(bufA, bufA);
-    return false;
-  }
-  return timingSafeEqual(bufA, bufB);
+  return timingSafeEqualBuffers(Buffer.from(a), Buffer.from(b));
 }
 
 // Extracts the webhook verification headers from a request.

@@ -23,49 +23,48 @@ export async function registerDropletFeatures(authToken: string): Promise<Regist
   };
 
   for (const webhook of dropletConfig.webhooks.filter((w) => w.enabled)) {
-    try {
+    await isolate(`webhook ${webhook.resource}.${webhook.event}`, async () => {
       const res = await client.createWebhook({
         resource: webhook.resource,
         event: webhook.event,
         url: webhookUrl,
         auth_token: webhookAuthToken,
-        http_method: "post",
       });
-      registered.webhookIds!.push(String(res.webhook.id));
-    } catch (err) {
-      console.error(
-        `[register] webhook ${webhook.resource}.${webhook.event} failed:`,
-        err,
-      );
-    }
+      registered.webhookIds.push(String(res.webhook.id));
+    });
   }
 
   for (const callback of dropletConfig.callbacks.filter((c) => c.enabled)) {
-    try {
+    await isolate(`callback ${callback.definition_name}`, async () => {
       const res = await client.createCallback({
         definition_name: callback.definition_name,
         url: `${baseUrl}${callback.url}`,
       });
-      registered.callbackUuids!.push(res.callback_registration.uuid);
-    } catch (err) {
-      console.error(`[register] callback ${callback.definition_name} failed:`, err);
-    }
+      registered.callbackUuids.push(res.callback_registration.uuid);
+    });
   }
 
   for (const dropzone of dropletConfig.dropzones.filter((d) => d.enabled)) {
-    try {
+    await isolate(`dropzone ${dropzone.uuid}`, async () => {
       const res = await client.createDropZone({
         name: dropzone.name,
         uuid: dropzone.uuid,
         settings: { page: dropzone.page, zone: dropzone.zone, priority: dropzone.priority },
         embed_url: `${baseUrl}${dropzone.embedPath}`,
       });
-      const uuid = res.drop_zone.uuid || dropzone.uuid;
-      registered.dropZoneUuids!.push(uuid);
-    } catch (err) {
-      console.error(`[register] dropzone ${dropzone.uuid} failed:`, err);
-    }
+      registered.dropZoneUuids.push(res.drop_zone.uuid || dropzone.uuid);
+    });
   }
 
   return registered;
+}
+
+// Runs one registration best-effort: a failure is logged and skipped so a
+// single bad feature never aborts the whole install.
+async function isolate(label: string, fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`[register] ${label} failed:`, err);
+  }
 }

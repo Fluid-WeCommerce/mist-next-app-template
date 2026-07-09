@@ -5,17 +5,12 @@
 // /api/auth/callback?token=<jwt>. This verifies that signature — replacing the
 // earlier decode-without-verify stub — so a forged token can't mint a session.
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { hmacSha256, timingSafeEqualBuffers } from "./crypto";
 
 export interface JwtVerifyResult<T> {
   valid: boolean;
   payload?: T;
   error?: string;
-}
-
-function base64urlDecode(input: string): Buffer {
-  const padded = input.replace(/-/g, "+").replace(/_/g, "/");
-  return Buffer.from(padded, "base64");
 }
 
 // Verifies an HS256-signed JWT and returns its decoded payload.
@@ -33,7 +28,7 @@ export function verifyFluidJwt<T = Record<string, unknown>>(
 
   let header: { alg?: string; typ?: string };
   try {
-    header = JSON.parse(base64urlDecode(headerB64).toString("utf-8"));
+    header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf-8"));
   } catch {
     return { valid: false, error: "Invalid JWT header" };
   }
@@ -42,22 +37,15 @@ export function verifyFluidJwt<T = Record<string, unknown>>(
     return { valid: false, error: `Unsupported JWT alg: ${header.alg}` };
   }
 
-  const expected = createHmac("sha256", secret)
-    .update(`${headerB64}.${payloadB64}`)
-    .digest();
-  let provided: Buffer;
-  try {
-    provided = base64urlDecode(signatureB64);
-  } catch {
-    return { valid: false, error: "Invalid JWT signature encoding" };
-  }
-  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+  const expected = hmacSha256(secret, `${headerB64}.${payloadB64}`);
+  const provided = Buffer.from(signatureB64, "base64url");
+  if (!timingSafeEqualBuffers(provided, expected)) {
     return { valid: false, error: "Invalid JWT signature" };
   }
 
   let payload: T & { exp?: number; nbf?: number };
   try {
-    payload = JSON.parse(base64urlDecode(payloadB64).toString("utf-8"));
+    payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf-8"));
   } catch {
     return { valid: false, error: "Invalid JWT payload" };
   }

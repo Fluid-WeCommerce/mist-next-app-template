@@ -78,15 +78,8 @@ export async function findCompany(opts: {
 // Looks up the active company that owns a fluid_shop — used to resolve the
 // per-company webhook verification token during signature checks.
 export async function findActiveCompanyByShop(fluidShop: string): Promise<Company | null> {
-  await ensureSchema();
-  const conn = await db();
-  const rows = await conn
-    .select()
-    .from(companies)
-    .where(eq(companies.fluidShop, fluidShop))
-    .limit(1);
-  const company = rows[0];
-  return company && company.active ? company : null;
+  const company = await findCompany({ fluidShop });
+  return company?.active ? company : null;
 }
 
 export async function setRegisteredIds(

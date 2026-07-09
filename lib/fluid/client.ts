@@ -4,6 +4,8 @@
 // register/clean up webhooks, callbacks, and drop zones during the install
 // lifecycle. Construct it with a company's authentication_token.
 
+import { getFluidApiUrl } from "../app-url";
+
 export interface CreateWebhookPayload {
   resource: string;
   url: string;
@@ -50,7 +52,7 @@ export class FluidClient {
 
   constructor(authToken: string, baseUrl?: string) {
     this.authToken = authToken;
-    this.baseUrl = baseUrl || process.env.FLUID_API_URL || "https://api.fluid.app";
+    this.baseUrl = baseUrl || getFluidApiUrl();
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -145,7 +147,7 @@ export async function exchangeInstallToken(
   exchangeToken: string,
   exchangeEndpoint?: string,
 ): Promise<ExchangeTokenResponse> {
-  const baseUrl = process.env.FLUID_API_URL || "https://api.fluid.app";
+  const baseUrl = getFluidApiUrl();
   const path = exchangeEndpoint || "/api/droplet_installations/exchange";
 
   const controller = new AbortController();

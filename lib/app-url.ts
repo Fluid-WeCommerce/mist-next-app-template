@@ -11,3 +11,8 @@ export function getAppBaseUrl(): string {
 
   return "http://localhost:3000";
 }
+
+// Base URL for the Fluid API (outbound calls). Overridable via FLUID_API_URL.
+export function getFluidApiUrl(): string {
+  return process.env.FLUID_API_URL || "https://api.fluid.app";
+}

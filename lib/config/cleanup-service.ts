@@ -14,27 +14,23 @@ export async function cleanupDropletFeatures(
   if (!registered) return;
   const client = new FluidClient(authToken);
 
-  for (const webhookId of registered.webhookIds ?? []) {
-    try {
-      await client.deleteWebhook(webhookId);
-    } catch (err) {
-      console.error(`[cleanup] webhook ${webhookId} failed:`, err);
-    }
-  }
+  await deleteEach("webhook", registered.webhookIds, (id) => client.deleteWebhook(id));
+  await deleteEach("callback", registered.callbackUuids, (id) => client.deleteCallback(id));
+  await deleteEach("dropzone", registered.dropZoneUuids, (id) => client.deleteDropZone(id));
+}
 
-  for (const callbackUuid of registered.callbackUuids ?? []) {
+// Deletes each id best-effort: one failure is logged and skipped, never
+// blocking the rest of the cleanup.
+async function deleteEach(
+  label: string,
+  ids: string[],
+  del: (id: string) => Promise<void>,
+): Promise<void> {
+  for (const id of ids) {
     try {
-      await client.deleteCallback(callbackUuid);
+      await del(id);
     } catch (err) {
-      console.error(`[cleanup] callback ${callbackUuid} failed:`, err);
-    }
-  }
-
-  for (const dropZoneUuid of registered.dropZoneUuids ?? []) {
-    try {
-      await client.deleteDropZone(dropZoneUuid);
-    } catch (err) {
-      console.error(`[cleanup] dropzone ${dropZoneUuid} failed:`, err);
+      console.error(`[cleanup] ${label} ${id} failed:`, err);
     }
   }
 }

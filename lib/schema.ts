@@ -49,9 +49,9 @@ export const webhooks = pgTable("webhooks", {
 });
 
 export type RegisteredIds = {
-  webhookIds?: string[];
-  callbackUuids?: string[];
-  dropZoneUuids?: string[];
+  webhookIds: string[];
+  callbackUuids: string[];
+  dropZoneUuids: string[];
 };
 
 export type Company = typeof companies.$inferSelect;

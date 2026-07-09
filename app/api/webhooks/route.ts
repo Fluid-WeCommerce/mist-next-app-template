@@ -35,14 +35,33 @@ interface AuthResult {
   authenticated: boolean;
   companyId?: string;
   error?: string;
+  // Response status to use when not authenticated (defaults to 401). 500 marks
+  // a server misconfiguration rather than a rejected caller.
+  status?: number;
 }
 
-// Authenticates a non-lifecycle webhook: prefer per-company HMAC (keyed by the
-// company's webhook_verification_token, looked up via X-Fluid-Shop), and fall
-// back to the global shared-secret AUTH_TOKEN.
-async function authenticateWebhook(request: NextRequest, rawBody: string): Promise<AuthResult> {
-  const headers = getWebhookHeaders(request.headers);
+type WebhookHeaders = ReturnType<typeof getWebhookHeaders>;
 
+// Lifecycle events (droplet.installed/uninstalled) are verified against the
+// global webhook secret — there's no per-company token until install completes.
+function authenticateLifecycle(headers: WebhookHeaders, rawBody: string): AuthResult {
+  const secret = process.env.FLUID_WEBHOOK_AUTH_TOKEN;
+  if (!secret) {
+    return { authenticated: false, error: "FLUID_WEBHOOK_AUTH_TOKEN not configured", status: 500 };
+  }
+  const result = verifyWebhookSignature(rawBody, headers.signature, headers.timestamp, secret);
+  if (result.valid) return { authenticated: true };
+  // Allow legacy shared-secret auth for lifecycle events without a signature.
+  if (authenticateWithSharedSecret(headers.authToken).authenticated) {
+    return { authenticated: true };
+  }
+  return { authenticated: false, error: result.error };
+}
+
+// Regular webhooks prefer per-company HMAC (keyed by the company's
+// webhook_verification_token, looked up via X-Fluid-Shop) and fall back to the
+// global shared-secret AUTH_TOKEN.
+async function authenticateWebhook(headers: WebhookHeaders, rawBody: string): Promise<AuthResult> {
   if (headers.signature && headers.timestamp) {
     if (!headers.fluidShop) {
       return { authenticated: false, error: "Missing X-Fluid-Shop header for signature verification" };
@@ -110,39 +129,26 @@ export async function POST(request: NextRequest) {
   console.log(`[webhook] received ${eventType}`);
 
   // Handlers expect the inner payload (with `company`), not the envelope.
-  const inner = body.payload as { company?: unknown } | undefined;
-  const payloadForHandler = inner?.company ? inner : (body.payload ?? body);
+  const payloadForHandler = body.payload ?? body;
 
-  // Authenticate.
+  // Authenticate: lifecycle events use the global secret, everything else uses
+  // per-company HMAC (falling back to the shared secret).
   const isLifecycle =
     resource === "droplet" && (event === "installed" || event === "uninstalled");
+  const headers = getWebhookHeaders(request.headers);
+  const auth = isLifecycle
+    ? authenticateLifecycle(headers, rawBody)
+    : await authenticateWebhook(headers, rawBody);
 
-  let authenticatedCompanyId: string | undefined;
-
-  if (isLifecycle) {
-    const headers = getWebhookHeaders(request.headers);
-    const secret = process.env.FLUID_WEBHOOK_AUTH_TOKEN;
-    if (!secret) {
+  if (!auth.authenticated) {
+    if (auth.status === 500) {
       console.error("[webhook] FLUID_WEBHOOK_AUTH_TOKEN not configured");
       return NextResponse.json({ error: "Webhook authentication not configured" }, { status: 500 });
     }
-    const result = verifyWebhookSignature(rawBody, headers.signature, headers.timestamp, secret);
-    if (!result.valid) {
-      // Allow legacy shared-secret auth for lifecycle events without a signature.
-      const fallback = authenticateWithSharedSecret(headers.authToken);
-      if (!fallback.authenticated) {
-        console.warn(`[webhook] unauthorized ${eventType}: ${result.error}`);
-        return NextResponse.json({ error: "Unauthorized", message: result.error }, { status: 401 });
-      }
-    }
-  } else {
-    const result = await authenticateWebhook(request, rawBody);
-    if (!result.authenticated) {
-      console.warn(`[webhook] unauthorized ${eventType}: ${result.error}`);
-      return NextResponse.json({ error: "Unauthorized", message: result.error }, { status: 401 });
-    }
-    authenticatedCompanyId = result.companyId;
+    console.warn(`[webhook] unauthorized ${eventType}: ${auth.error}`);
+    return NextResponse.json({ error: "Unauthorized", message: auth.error }, { status: 401 });
   }
+  const authenticatedCompanyId = auth.companyId;
 
   // Audit: record the webhook before processing.
   const conn = await db();
