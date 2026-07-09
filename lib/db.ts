@@ -8,14 +8,16 @@
 // @neondatabase/serverless with DATABASE_URL — set on the Vercel project
 // at create time by Mist.
 //
-// Both paths return the same Drizzle interface so query code is identical.
+// Both paths return the same Drizzle query builder so query code is identical.
+// The client is typed as the intersection of both driver types: they share an
+// identical query-builder surface, so `.select`/`.insert`/`.update`/`.delete`
+// resolve at compile time while the concrete driver is chosen at runtime.
 
-import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
-import { drizzle as drizzleNeon } from "drizzle-orm/neon-http";
+import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
+import { drizzle as drizzleNeon, type NeonHttpDatabase } from "drizzle-orm/neon-http";
+import * as schema from "./schema";
 
-type DbClient =
-  | ReturnType<typeof drizzlePglite>
-  | ReturnType<typeof drizzleNeon>;
+export type DbClient = PgliteDatabase<typeof schema> & NeonHttpDatabase<typeof schema>;
 
 let _db: DbClient | null = null;
 
@@ -33,13 +35,13 @@ export async function db(): Promise<DbClient> {
     const client = new PGlite({
       dataDir: pathToFileURL(path.join(process.cwd(), "local.db")).href,
     });
-    _db = drizzlePglite(client) as DbClient;
+    _db = drizzlePglite(client, { schema }) as unknown as DbClient;
   } else {
     const { neon } = await import("@neondatabase/serverless");
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set");
     const client = neon(url);
-    _db = drizzleNeon(client) as DbClient;
+    _db = drizzleNeon(client, { schema }) as unknown as DbClient;
   }
 
   return _db;

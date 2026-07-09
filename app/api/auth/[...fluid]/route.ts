@@ -4,11 +4,17 @@
 //
 //   GET /api/auth/callback?token=<jwt>&return_to=<url>
 //
-// We validate the JWT, set a session cookie, and redirect to return_to.
+// We verify the JWT's HMAC signature with FLUID_DROPLET_SECRET, set a session
+// cookie, and redirect to return_to.
 //
 // Env vars (set by Mist at create time on the Vercel project):
-//   FLUID_DROPLET_SECRET — for verifying the JWT signature
+//   FLUID_DROPLET_SECRET — HMAC key for verifying the JWT signature
 import { NextRequest, NextResponse } from "next/server";
+import { verifyFluidJwt } from "@/lib/jwt";
+import type { FluidSession } from "@/lib/fluid-session";
+
+// node:crypto (used by verifyFluidJwt) needs the Node runtime.
+export const runtime = "nodejs";
 
 export async function GET(
   req: NextRequest,
@@ -26,10 +32,20 @@ function completeHandshake(req: NextRequest) {
   const returnTo = req.nextUrl.searchParams.get("return_to") || "/";
   if (!token) return new Response("Missing token", { status: 400 });
 
-  // TODO Phase 002: real JWT verification using FLUID_DROPLET_SECRET (HMAC).
-  // For now we trust the token's shape and decode the embedded session.
-  const session = decodeUnverified(token);
-  if (!session) return new Response("Invalid token", { status: 401 });
+  const secret = process.env.FLUID_DROPLET_SECRET;
+  if (!secret) {
+    console.error("[auth] FLUID_DROPLET_SECRET not configured");
+    return new Response("Auth not configured", { status: 500 });
+  }
+
+  const result = verifyFluidJwt<FluidSession>(token, secret);
+  if (!result.valid || !result.payload) {
+    console.warn(`[auth] rejected token: ${result.error}`);
+    return new Response("Invalid token", { status: 401 });
+  }
+
+  const { user_id, user_name, company_id, company_name } = result.payload;
+  const session: FluidSession = { user_id, user_name, company_id, company_name };
 
   const sessionCookie = Buffer.from(JSON.stringify(session)).toString("base64");
   const res = NextResponse.redirect(new URL(returnTo, req.url));
@@ -40,13 +56,4 @@ function completeHandshake(req: NextRequest) {
     path:     "/",
   });
   return res;
-}
-
-function decodeUnverified(jwt: string): Record<string, unknown> | null {
-  try {
-    const [ , payload ] = jwt.split(".");
-    return JSON.parse(Buffer.from(payload, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
 }
