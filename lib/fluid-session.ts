@@ -1,7 +1,8 @@
 // Read the current Fluid session — set by the auth handshake handler.
 //
 // Cookie shape: base64-encoded JSON {user_id, user_name, company_id, company_name}.
-// See app/api/auth/[...fluid]/route.ts and middleware.ts.
+// The cookie is set only after the JWT signature is verified — see
+// app/api/auth/[...fluid]/route.ts.
 
 import { cookies } from "next/headers";
 

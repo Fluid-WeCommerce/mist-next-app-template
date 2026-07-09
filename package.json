@@ -5,7 +5,12 @@
   "scripts": {
     "dev": "cross-env MIST_DEV=1 next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "register:webhooks": "node scripts/register-lifecycle-webhooks.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -20,6 +25,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "cross-env": "^7.0.3",
-    "typescript": "^5"
+    "eslint": "^9.18.0",
+    "typescript": "^5",
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^3.0.0"
   }
 }
