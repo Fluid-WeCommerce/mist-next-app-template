@@ -34,9 +34,13 @@ export default async function Home() {
           </p>
         ) : (
           <p>
-            <a href="/droplet/connect" style={{ color: "#ffd6a8" }}>Connect your Fluid account</a>{" "}
-            to identify the visitor. The home page is public — only the routes you choose
-            to gate require a session.
+            No Fluid session yet. This app runs <strong>inside the Fluid admin</strong> —
+            if you&apos;re seeing this, it either isn&apos;t installed on this company yet,
+            or it was opened directly instead of from the admin. Install it on your
+            company and open it from there and it signs the visitor in automatically.
+            Developing locally? Use{" "}
+            <a href="/droplet/connect" style={{ color: "#ffd6a8" }}>Connect your Fluid account</a>.
+            {" "}(This home page is public — only the routes you choose to gate need a session.)
           </p>
         )}
 
