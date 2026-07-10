@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-// One-time setup (droplet owner): register the droplet.installed and
-// droplet.uninstalled lifecycle webhooks on YOUR Fluid company so Fluid
-// notifies this droplet when a company installs or removes it.
+// One-time setup (droplet owner): point the Droplet install/uninstall
+// lifecycle webhook URLs at this Mist app. Fluid calls these URLs when a
+// company installs or removes the Droplet, and the install handler exchanges
+// the short-lived install token for company credentials.
 //
 // Usage (from the repo root):
-//   FLUID_TOKEN=... APP_URL=https://your-droplet.vercel.app \
-//   FLUID_WEBHOOK_AUTH_TOKEN=... node scripts/register-lifecycle-webhooks.mjs
+//   FLUID_TOKEN=... FLUID_DROPLET_UUID=drp_... APP_URL=https://your-app \
+//     node scripts/register-lifecycle-webhooks.mjs
 //
-// Reads .env.local if present. Idempotency is Fluid-side — re-running may
-// create duplicates, so run it once (or delete stale webhooks first).
+// Reads .env.local if present. Re-running is safe: this updates the Droplet's
+// lifecycle URLs to the current APP_URL.
 
 import { readFileSync } from "node:fs";
 
@@ -29,47 +30,40 @@ loadDotEnv(".env.local");
 
 const apiUrl = process.env.FLUID_API_URL || "https://api.fluid.app";
 const token = process.env.FLUID_TOKEN;
+const dropletUuid = process.env.FLUID_DROPLET_UUID;
 const appUrl = (process.env.APP_URL || "").replace(/\/$/, "");
-const authToken = process.env.FLUID_WEBHOOK_AUTH_TOKEN;
 
-if (!token || !appUrl || !authToken) {
-  console.error(
-    "Missing required env. Need FLUID_TOKEN, APP_URL, and FLUID_WEBHOOK_AUTH_TOKEN.",
-  );
+if (!token || !dropletUuid || !appUrl) {
+  console.error("Missing required env. Need FLUID_TOKEN, FLUID_DROPLET_UUID, and APP_URL.");
   process.exit(1);
 }
 
-const webhookUrl = `${appUrl}/api/webhooks`;
+const installWebhookUrl = `${appUrl}/api/webhooks/installed`;
+const uninstallWebhookUrl = `${appUrl}/api/webhooks/uninstalled`;
 
-async function register(event) {
-  const res = await fetch(`${apiUrl}/api/company/webhooks`, {
-    method: "POST",
+try {
+  const res = await fetch(`${apiUrl}/api/droplets/${encodeURIComponent(dropletUuid)}`, {
+    method: "PUT",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      webhook: {
-        resource: "droplet",
-        event,
-        url: webhookUrl,
-        active: true,
-        auth_token: authToken,
-        http_method: "post",
+      droplet: {
+        install_webhook_url: installWebhookUrl,
+        uninstall_webhook_url: uninstallWebhookUrl,
       },
     }),
   });
-  if (!res.ok) {
-    throw new Error(`register ${event} failed: ${res.status} ${await res.text()}`);
-  }
-  console.log(`✓ registered droplet.${event} → ${webhookUrl}`);
-}
 
-try {
-  await register("installed");
-  await register("uninstalled");
+  if (!res.ok) {
+    throw new Error(`register lifecycle webhooks failed: ${res.status} ${await res.text()}`);
+  }
+
+  console.log(`✓ install webhook → ${installWebhookUrl}`);
+  console.log(`✓ uninstall webhook → ${uninstallWebhookUrl}`);
   console.log("Done.");
 } catch (err) {
-  console.error(err.message);
+  console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 }

@@ -6,6 +6,7 @@
 
 import { upsertCompany, setRegisteredIds } from "../repositories/companies";
 import { registerDropletFeatures } from "../config/registration-service";
+import { exchangeInstallToken } from "../fluid/client";
 
 interface InstalledPayload {
   company?: {
@@ -17,6 +18,10 @@ interface InstalledPayload {
     droplet_installation_uuid?: string;
     authentication_token?: string;
     webhook_verification_token?: string;
+    credentials?: {
+      exchange_token?: string;
+      exchange_endpoint?: string;
+    };
   };
 }
 
@@ -25,18 +30,37 @@ export async function handleDropletInstalled(payload: unknown): Promise<void> {
   const company = data.company;
   if (!company) throw new Error("droplet.installed: missing `company` in payload");
 
-  const authenticationToken = company.authentication_token ?? null;
+  let authenticationToken = company.authentication_token ?? null;
+  let webhookVerificationToken = company.webhook_verification_token ?? null;
+  let dropletInstallationUuid = company.droplet_installation_uuid ?? null;
+  let dropletUuid = company.company_droplet_uuid ?? company.droplet_uuid ?? null;
+  let fluidCompanyId = company.fluid_company_id ?? null;
+  let fluidShop = company.fluid_shop ?? null;
+
+  const exchangeToken = company.credentials?.exchange_token;
+  if (!authenticationToken && exchangeToken) {
+    const exchanged = await exchangeInstallToken(
+      exchangeToken,
+      company.credentials?.exchange_endpoint,
+    );
+    authenticationToken = exchanged.credentials.authentication_token;
+    webhookVerificationToken = exchanged.credentials.webhook_verification_token;
+    dropletInstallationUuid = exchanged.droplet_installation.droplet_installation_uuid;
+    dropletUuid = exchanged.droplet_installation.droplet_uuid;
+    fluidCompanyId = exchanged.droplet_installation.fluid_company_id;
+    fluidShop = exchanged.droplet_installation.fluid_shop;
+  }
 
   const saved = await upsertCompany({
-    fluidCompanyId: company.fluid_company_id ?? null,
-    fluidShop: company.fluid_shop ?? null,
+    fluidCompanyId,
+    fluidShop,
     name: company.name ?? null,
     // droplet_uuid is the shared droplet UUID; company_droplet_uuid may also be
     // sent — prefer whichever is present.
-    companyDropletUuid: company.company_droplet_uuid ?? company.droplet_uuid ?? null,
-    dropletInstallationUuid: company.droplet_installation_uuid ?? null,
+    companyDropletUuid: dropletUuid,
+    dropletInstallationUuid,
     authenticationToken,
-    webhookVerificationToken: company.webhook_verification_token ?? null,
+    webhookVerificationToken,
   });
 
   console.log(`[droplet.installed] company ${saved.id} (${saved.name ?? "unknown"}) active`);

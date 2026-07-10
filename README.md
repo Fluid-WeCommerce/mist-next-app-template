@@ -12,7 +12,7 @@ customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 | `app/page.tsx` | Public landing page; renders the visitor's Fluid identity if a session exists, otherwise links them to `/droplet/connect`. |
 | `app/droplet/connect/route.ts` | Starts the Fluid auth handshake — visitors hit this when they want to sign in. |
 | `app/api/auth/[...fluid]/route.ts` | The auth callback that **verifies Fluid's JWT signature** (HMAC-SHA256 with `FLUID_DROPLET_SECRET`) and sets the session cookie. |
-| `app/api/webhooks/route.ts` | Receives webhooks from Fluid, **verifies the HMAC signature** (with replay protection), audits every event, and routes it to a handler. |
+| `app/api/webhooks/route.ts` | Receives webhooks from Fluid, **verifies the HMAC signature** (with replay protection), audits every event, and routes it to a handler. Lifecycle aliases also exist at `/api/webhooks/installed` and `/api/webhooks/uninstalled`. |
 | `app/api/health/route.ts` | `/api/health` runs `SELECT 1` against the database — useful for monitoring. |
 | `lib/db.ts` | Environment-aware Postgres client: [PGlite](https://github.com/electric-sql/pglite) in local dev, [Neon](https://neon.tech) serverless in production. Same Drizzle interface either way. |
 | `lib/schema.ts` / `lib/ensure-schema.ts` | Drizzle tables (`companies`, `webhooks`) + idempotent bootstrap DDL that runs on both PGlite and Neon. |
@@ -29,14 +29,17 @@ There is no global auth gate. Every page is public by default; add a `getFluidSe
 
 This template is a full Fluid droplet, not just a landing page:
 
-1. **One-time (droplet owner):** register the lifecycle webhooks so Fluid tells
-   this droplet when a company installs/removes it:
+1. **One-time (droplet owner):** register the lifecycle webhook URLs on the
+   Droplet so Fluid tells this app when a company installs/removes it:
    ```bash
-   npm run register:webhooks   # needs FLUID_TOKEN, APP_URL, FLUID_WEBHOOK_AUTH_TOKEN
+   npm run register:webhooks   # needs FLUID_TOKEN, FLUID_DROPLET_UUID, APP_URL
    ```
-2. **A company installs the droplet** → Fluid POSTs `droplet.installed` to
-   `/api/webhooks`. The handler stores a `Company` row (with its auth tokens)
-   and registers every enabled feature from `lib/config/droplet.config.ts`.
+   This sets `install_webhook_url` to `/api/webhooks/installed` and
+   `uninstall_webhook_url` to `/api/webhooks/uninstalled` on the Droplet.
+2. **A company installs the droplet** → Fluid POSTs `droplet.installed` to the
+   install webhook URL. The handler exchanges the short-lived install token for
+   company credentials, stores a `Company` row, and registers every enabled
+   feature from `lib/config/droplet.config.ts`.
 3. **Company-specific webhooks/callbacks** fire against `/api/webhooks`,
    authenticated per-company by HMAC signature.
 4. **Uninstall** → `droplet.uninstalled` deactivates the company and removes the
