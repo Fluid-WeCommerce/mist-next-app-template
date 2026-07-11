@@ -8,13 +8,14 @@
 import { FluidClient } from "../fluid/client";
 import { getAppBaseUrl } from "../app-url";
 import type { RegisteredIds } from "../schema";
+import { getWebhookAuthToken } from "../webhook-auth-token";
 import { dropletConfig } from "./droplet.config";
 
 export async function registerDropletFeatures(authToken: string): Promise<RegisteredIds> {
   const client = new FluidClient(authToken);
   const baseUrl = getAppBaseUrl();
   const webhookUrl = `${baseUrl}/api/webhooks`;
-  const webhookAuthToken = process.env.FLUID_WEBHOOK_AUTH_TOKEN || "";
+  const webhookAuthToken = getWebhookAuthToken() || "";
 
   const registered: RegisteredIds = {
     webhookIds: [],
