@@ -24,6 +24,10 @@ import {
   tokensMatch,
 } from "@/lib/webhook-verification";
 import { findActiveCompanyByShop } from "@/lib/repositories/companies";
+import {
+  getWebhookAuthToken,
+  WEBHOOK_AUTH_TOKEN_ENV_DESCRIPTION,
+} from "@/lib/webhook-auth-token";
 
 // node:crypto + Neon/PGlite need the Node runtime, not the edge runtime.
 export const runtime = "nodejs";
@@ -45,9 +49,13 @@ type WebhookHeaders = ReturnType<typeof getWebhookHeaders>;
 // Lifecycle events (droplet.installed/uninstalled) are verified against the
 // global webhook secret — there's no per-company token until install completes.
 function authenticateLifecycle(headers: WebhookHeaders, rawBody: string): AuthResult {
-  const secret = process.env.FLUID_WEBHOOK_AUTH_TOKEN;
+  const secret = getWebhookAuthToken();
   if (!secret) {
-    return { authenticated: false, error: "FLUID_WEBHOOK_AUTH_TOKEN not configured", status: 500 };
+    return {
+      authenticated: false,
+      error: `${WEBHOOK_AUTH_TOKEN_ENV_DESCRIPTION} not configured`,
+      status: 500,
+    };
   }
   const result = verifyWebhookSignature(rawBody, headers.signature, headers.timestamp, secret);
   if (result.valid) return { authenticated: true };
@@ -96,9 +104,12 @@ async function authenticateWebhook(headers: WebhookHeaders, rawBody: string): Pr
 }
 
 function authenticateWithSharedSecret(authToken: string | null): AuthResult {
-  const expected = process.env.FLUID_WEBHOOK_AUTH_TOKEN;
+  const expected = getWebhookAuthToken();
   if (!expected) {
-    return { authenticated: false, error: "FLUID_WEBHOOK_AUTH_TOKEN not configured" };
+    return {
+      authenticated: false,
+      error: `${WEBHOOK_AUTH_TOKEN_ENV_DESCRIPTION} not configured`,
+    };
   }
   if (authToken && tokensMatch(authToken, expected)) {
     return { authenticated: true };
@@ -142,7 +153,7 @@ export async function POST(request: NextRequest) {
 
   if (!auth.authenticated) {
     if (auth.status === 500) {
-      console.error("[webhook] FLUID_WEBHOOK_AUTH_TOKEN not configured");
+      console.error(`[webhook] ${WEBHOOK_AUTH_TOKEN_ENV_DESCRIPTION} not configured`);
       return NextResponse.json({ error: "Webhook authentication not configured" }, { status: 500 });
     }
     console.warn(`[webhook] unauthorized ${eventType}: ${auth.error}`);

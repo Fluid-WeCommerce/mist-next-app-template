@@ -81,7 +81,8 @@ project's env vars are set automatically:
 | --- | --- |
 | `DATABASE_URL` | The Neon connection string for your dedicated Postgres. |
 | `FLUID_DROPLET_UUID` | The droplet's UUID — used by the auth handler. |
-| `FLUID_DROPLET_SECRET` | HMAC signing key for verifying Fluid-issued JWTs (Phase 002). |
+| `FLUID_DROPLET_SECRET` | HMAC signing key for verifying Fluid-issued JWTs. Existing Mist deployments also use this as the webhook auth fallback. |
+| `FLUID_WEBHOOK_AUTH_TOKEN` | Shared secret for lifecycle webhooks and legacy `AUTH_TOKEN` webhook fallback. New Mist deployments set this explicitly; older ones fall back to `FLUID_DROPLET_SECRET`. |
 | `FLUID_BASE_URL` | The Fluid app's base URL. |
 
 Push to `main` and Vercel deploys automatically. The Mist CLI (`fluid
