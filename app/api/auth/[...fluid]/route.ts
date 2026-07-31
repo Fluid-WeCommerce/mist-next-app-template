@@ -11,7 +11,10 @@
 //   FLUID_DROPLET_SECRET — HMAC key for verifying the JWT signature
 import { NextRequest, NextResponse } from "next/server";
 import { verifyFluidJwt } from "@/lib/jwt";
-import type { FluidSession } from "@/lib/fluid-session";
+import {
+  sealFluidSession,
+  type FluidSession,
+} from "@/lib/fluid-session";
 
 // node:crypto (used by verifyFluidJwt) needs the Node runtime.
 export const runtime = "nodejs";
@@ -47,7 +50,7 @@ function completeHandshake(req: NextRequest) {
   const { user_id, user_name, company_id, company_name } = result.payload;
   const session: FluidSession = { user_id, user_name, company_id, company_name };
 
-  const sessionCookie = Buffer.from(JSON.stringify(session)).toString("base64");
+  const sessionCookie = sealFluidSession(session, secret);
   const res = NextResponse.redirect(new URL(returnTo, req.url));
   res.cookies.set("mist_session", sessionCookie, {
     httpOnly: true,
