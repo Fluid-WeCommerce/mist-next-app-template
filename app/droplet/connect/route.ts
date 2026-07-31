@@ -9,9 +9,13 @@
 //   FLUID_BASE_URL       — e.g. "https://www.fluid.app"
 //   FLUID_DROPLET_UUID   — e.g. "drp_abc123..."
 import { NextRequest, NextResponse } from "next/server";
+import { safeReturnTo } from "@/lib/safe-return-to";
 
 export async function GET(req: NextRequest) {
-  const returnTo = req.nextUrl.searchParams.get("return_to") || "/";
+  const returnTo = safeReturnTo(
+    req.nextUrl.searchParams.get("return_to"),
+    req.url,
+  );
   const fluidBase = process.env.FLUID_BASE_URL || "https://fluid.app";
   const dropletUuid = process.env.FLUID_DROPLET_UUID;
   if (!dropletUuid) {
