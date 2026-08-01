@@ -14,6 +14,7 @@ customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 | `app/api/auth/[...fluid]/route.ts` | The auth callback that **verifies Fluid's JWT signature** (HMAC-SHA256 with `FLUID_DROPLET_SECRET`) and sets the session cookie. |
 | `app/api/webhooks/route.ts` | Receives webhooks from Fluid, **verifies the HMAC signature** (with replay protection), audits every event, and routes it to a handler. Lifecycle aliases also exist at `/api/webhooks/installed` and `/api/webhooks/uninstalled`. |
 | `app/api/health/route.ts` | `/api/health` runs `SELECT 1` against the database — useful for monitoring. |
+| `app/embed/checkout-banner/page.tsx` | Working example for the default `/embed/checkout-banner` Drop Zone declared in `droplet.config.ts`. |
 | `lib/db.ts` | Environment-aware Postgres client: [PGlite](https://github.com/electric-sql/pglite) in local dev, [Neon](https://neon.tech) serverless in production. Same Drizzle interface either way. |
 | `lib/schema.ts` / `lib/ensure-schema.ts` | Drizzle tables (`companies`, `webhooks`) + idempotent bootstrap DDL that runs on both PGlite and Neon. |
 | `lib/webhook-verification.ts` / `lib/jwt.ts` | HMAC-SHA256 webhook signature verification (with a 5-min replay window) and HS256 JWT verification. |
