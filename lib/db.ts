@@ -19,11 +19,28 @@ import * as schema from "./schema";
 
 export type DbClient = PgliteDatabase<typeof schema> & NeonHttpDatabase<typeof schema>;
 
-let _db: DbClient | null = null;
+// Next compiles pages and route handlers into separate server bundles. A
+// module-local cache can therefore create multiple PGlite instances for the
+// same data directory, leaving server-rendered pages with stale snapshots of
+// writes made by route handlers. Cache the connection at process scope so the
+// local database is shared across every bundle and survives dev HMR.
+const DB_CACHE = Symbol.for("mist.db");
+
+type DbGlobal = typeof globalThis & { [DB_CACHE]?: Promise<DbClient> };
 
 export async function db(): Promise<DbClient> {
-  if (_db) return _db;
+  const cache = globalThis as DbGlobal;
+  if (!cache[DB_CACHE]) {
+    cache[DB_CACHE] = connect().catch((error) => {
+      delete cache[DB_CACHE];
+      throw error;
+    });
+  }
 
+  return cache[DB_CACHE];
+}
+
+async function connect(): Promise<DbClient> {
   if (process.env.MIST_DEV === "1") {
     const { PGlite } = await import("@electric-sql/pglite");
     const { pathToFileURL } = await import("node:url");
@@ -35,14 +52,12 @@ export async function db(): Promise<DbClient> {
     const client = new PGlite({
       dataDir: pathToFileURL(path.join(process.cwd(), "local.db")).href,
     });
-    _db = drizzlePglite(client, { schema }) as unknown as DbClient;
-  } else {
-    const { neon } = await import("@neondatabase/serverless");
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL is not set");
-    const client = neon(url);
-    _db = drizzleNeon(client, { schema }) as unknown as DbClient;
+    return drizzlePglite(client, { schema }) as unknown as DbClient;
   }
 
-  return _db;
+  const { neon } = await import("@neondatabase/serverless");
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set");
+  const client = neon(url);
+  return drizzleNeon(client, { schema }) as unknown as DbClient;
 }
