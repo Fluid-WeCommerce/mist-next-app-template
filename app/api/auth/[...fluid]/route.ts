@@ -11,6 +11,7 @@
 //   FLUID_DROPLET_SECRET — HMAC key for verifying the JWT signature
 import { NextRequest, NextResponse } from "next/server";
 import { verifyFluidJwt } from "@/lib/jwt";
+import { safeReturnTo } from "@/lib/safe-return-to";
 import type { FluidSession } from "@/lib/fluid-session";
 
 // node:crypto (used by verifyFluidJwt) needs the Node runtime.
@@ -29,7 +30,10 @@ export async function GET(
 
 function completeHandshake(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
-  const returnTo = req.nextUrl.searchParams.get("return_to") || "/";
+  const returnTo = safeReturnTo(
+    req.nextUrl.searchParams.get("return_to"),
+    req.url,
+  );
   if (!token) return new Response("Missing token", { status: 400 });
 
   const secret = process.env.FLUID_DROPLET_SECRET;
