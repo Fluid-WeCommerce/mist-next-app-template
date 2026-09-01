@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
-  deactivateCompany,
+  deactivateCompanyByInstallation,
   upsertCompany,
 } from "../repositories/companies";
 import {
@@ -64,7 +64,7 @@ describe("resolveFluidInstallation", () => {
       authenticationToken: `dit_${randomUUID()}`,
       webhookVerificationToken: `wvt_${randomUUID()}`,
     });
-    await deactivateCompany({ dropletInstallationUuid: installationId });
+    await deactivateCompanyByInstallation(installationId);
     const request = new Request("https://droplet.example/api/private", {
       headers: { [FLUID_INSTALLATION_HEADER]: installationId },
     });

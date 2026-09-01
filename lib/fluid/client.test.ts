@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  deactivateCompany,
+  deactivateCompanyByInstallation,
   upsertCompany,
 } from "../repositories/companies";
 import { createFluidClientForInstallation } from "./client";
@@ -71,9 +71,9 @@ describe("createFluidClientForInstallation", () => {
       authenticationToken: `dit_${randomUUID()}`,
       webhookVerificationToken: `wvt_${randomUUID()}`,
     });
-    const inactiveInstallation = await deactivateCompany({
-      dropletInstallationUuid: installationId,
-    });
+    const inactiveInstallation = await deactivateCompanyByInstallation(
+      installationId,
+    );
     expect(inactiveInstallation).not.toBeNull();
 
     const createClient = () =>

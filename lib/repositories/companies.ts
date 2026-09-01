@@ -115,13 +115,24 @@ export async function setRegisteredIds(
     .where(eq(companies.id, companyId));
 }
 
-// Marks a company inactive on uninstall. Returns the deactivated row (with its
-// stored credentials) so the caller can clean up remote registrations.
-export async function deactivateCompany(opts: {
-  dropletInstallationUuid?: string | null;
-  fluidShop?: string | null;
-}): Promise<Company | null> {
-  const company = await findCompany(opts);
+export async function eraseCompanyCredentials(companyId: string): Promise<void> {
+  const conn = await db();
+  await conn
+    .update(companies)
+    .set({
+      authenticationToken: null,
+      webhookVerificationToken: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(companies.id, companyId));
+}
+
+// Marks one exact installation inactive on uninstall. Returns the deactivated
+// row with its credentials so the caller can clean up remote registrations.
+export async function deactivateCompanyByInstallation(
+  dropletInstallationUuid: string,
+): Promise<Company | null> {
+  const company = await findCompany({ dropletInstallationUuid });
   if (!company) return null;
 
   const conn = await db();

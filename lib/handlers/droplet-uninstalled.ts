@@ -1,15 +1,18 @@
 // Handles the `droplet.uninstalled` lifecycle webhook.
 //
 // Deactivates the company record and best-effort removes every Fluid
-// registration created on install. Deactivation is idempotent — a repeated
-// uninstall webhook is a no-op.
+// registration created on install. Repeated delivery remains safe: the row is
+// already inactive and its credentials have already been erased.
 
-import { deactivateCompany } from "../repositories/companies";
+import {
+  deactivateCompanyByInstallation,
+  eraseCompanyCredentials,
+} from "../repositories/companies";
 import { cleanupDropletFeatures } from "../config/cleanup-service";
+import { isFluidInstallationReference } from "../fluid/installation-reference";
 
 interface UninstalledPayload {
   company?: {
-    fluid_shop?: string;
     droplet_installation_uuid?: string;
   };
 }
@@ -19,10 +22,12 @@ export async function handleDropletUninstalled(payload: unknown): Promise<void> 
   const company = data.company;
   if (!company) throw new Error("droplet.uninstalled: missing `company` in payload");
 
-  const deactivated = await deactivateCompany({
-    dropletInstallationUuid: company.droplet_installation_uuid ?? null,
-    fluidShop: company.fluid_shop ?? null,
-  });
+  const installationId = company.droplet_installation_uuid ?? null;
+  if (!isFluidInstallationReference(installationId)) {
+    throw new Error("droplet.uninstalled: missing or invalid `droplet_installation_uuid`");
+  }
+
+  const deactivated = await deactivateCompanyByInstallation(installationId);
 
   if (!deactivated) {
     console.warn("[droplet.uninstalled] no matching company found; nothing to do");
@@ -34,4 +39,6 @@ export async function handleDropletUninstalled(payload: unknown): Promise<void> 
   if (deactivated.authenticationToken) {
     await cleanupDropletFeatures(deactivated.authenticationToken, deactivated.registeredIds);
   }
+
+  await eraseCompanyCredentials(deactivated.id);
 }

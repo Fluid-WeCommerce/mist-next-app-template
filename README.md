@@ -44,9 +44,16 @@ This template is a full Fluid droplet, not just a landing page:
    company credentials, stores a `Company` row, and registers every enabled
    feature from `lib/config/droplet.config.ts`.
 3. **Company-specific webhooks/callbacks** fire against `/api/webhooks`,
-   authenticated per-company by HMAC signature.
-4. **Uninstall** → `droplet.uninstalled` deactivates the company and removes the
-   registrations that were created on install.
+   authenticated per-installation by HMAC signature. The global lifecycle token
+   is not accepted as a fallback for regular events.
+4. **Uninstall** → `droplet.uninstalled` resolves the exact DRI, deactivates the
+   installation, removes registrations with its DIT, and erases its retained
+   DIT and webhook credential.
+
+Webhook audit rows keep the event shape needed for diagnostics but recursively
+redact DEX, DIT, webhook verification credentials, and other known access-token
+fields before persistence. Handlers still receive the original in-memory
+payload.
 
 To add an event handler: write it in `lib/handlers/`, register it in
 `lib/handlers/index.ts`, and enable the matching webhook in
@@ -133,7 +140,7 @@ project's env vars are set automatically:
 | `DATABASE_URL` | The Neon connection string for your dedicated Postgres. |
 | `FLUID_DROPLET_UUID` | The droplet's UUID — used by the auth handler. |
 | `FLUID_DROPLET_SECRET` | HMAC signing key for verifying Fluid-issued JWTs. Existing Mist deployments also use this as the webhook auth fallback. |
-| `FLUID_WEBHOOK_AUTH_TOKEN` | Shared secret for lifecycle webhooks and legacy `AUTH_TOKEN` webhook fallback. New Mist deployments set this explicitly; older ones fall back to `FLUID_DROPLET_SECRET`. |
+| `FLUID_WEBHOOK_AUTH_TOKEN` | Bootstrap secret for install/uninstall lifecycle webhooks. It is not accepted for regular company events. New Mist deployments set this explicitly; older lifecycle registrations fall back to `FLUID_DROPLET_SECRET`. |
 | `FLUID_BASE_URL` | The Fluid app's base URL. |
 
 Push to `main` and Vercel deploys automatically. The Mist CLI (`fluid
