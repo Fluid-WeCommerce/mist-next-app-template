@@ -9,24 +9,21 @@ customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 
 | Path | Purpose |
 | --- | --- |
-| `app/page.tsx` | Public landing page; renders the visitor's Fluid identity if a session exists, otherwise links them to `/droplet/connect`. |
-| `app/droplet/connect/route.ts` | Starts the Fluid auth handshake — visitors hit this when they want to sign in. |
-| `app/api/auth/[...fluid]/route.ts` | The auth callback that **verifies Fluid's JWT signature** (HMAC-SHA256 with `FLUID_DROPLET_SECRET`) and sets the session cookie. |
+| `app/page.tsx` | Public landing page for a newly generated Mist application. |
 | `app/api/webhooks/route.ts` | Receives webhooks from Fluid, **verifies the HMAC signature** (with replay protection), audits every event, and routes it to a handler. Lifecycle aliases also exist at `/api/webhooks/installed` and `/api/webhooks/uninstalled`. |
 | `app/api/health/route.ts` | `/api/health` runs `SELECT 1` against the database — useful for monitoring. |
 | `app/embed/checkout-banner/page.tsx` | Working example for the default `/embed/checkout-banner` Drop Zone declared in `droplet.config.ts`. |
 | `lib/db.ts` | Environment-aware Postgres client: [PGlite](https://github.com/electric-sql/pglite) in local dev, [Neon](https://neon.tech) serverless in production. Same Drizzle interface either way. |
 | `lib/schema.ts` / `lib/ensure-schema.ts` | Drizzle tables (`companies`, `webhooks`) + idempotent bootstrap DDL that runs on both PGlite and Neon. |
-| `lib/webhook-verification.ts` / `lib/jwt.ts` | HMAC-SHA256 webhook signature verification (with a 5-min replay window) and HS256 JWT verification. |
+| `lib/webhook-verification.ts` | HMAC-SHA256 webhook signature verification with a five-minute replay window. |
 | `lib/fluid/client.ts` | `FluidClient` — calls the Fluid API on an installation's behalf, constructs clients from the resolved installation DIT, and performs the v2 `exchangeInstallToken` handshake. |
 | `lib/fluid/installation-reference.ts` | Reads the iframe's DRI bootstrap parameter and attaches it to same-origin API requests. |
 | `lib/fluid/installation-context.ts` | Resolves one exact active installation from the DRI request header; this is the server-side tenancy boundary. |
 | `lib/events/` + `lib/handlers/` | Event router and the install/uninstall lifecycle handlers. |
 | `lib/config/droplet.config.ts` | Declare the webhooks, callbacks, and drop zones your droplet needs — enabled entries are auto-registered on install and cleaned up on uninstall. |
-| `lib/fluid-session.ts` | `getFluidSession()` reads the session cookie set by the auth handler — call it from any page or route that needs the visitor's identity. |
 | `proxy.ts` / `app/embed-guard.tsx` | Restrict framing to Fluid (CSP `frame-ancestors`) and an optional client guard for embed-only pages. |
 
-There is no global auth gate. Every page is public by default; add a `getFluidSession()` check (and redirect to `/droplet/connect` if `null`) in the routes you want gated.
+There is no viewer-authentication implementation in this template. Embedded routes use the DRI installation context described below for interim tenancy and DIT selection. DRI is not viewer authentication; OAuth and signed session tokens are the planned replacement.
 
 ## Install lifecycle
 
@@ -112,7 +109,7 @@ business logic should not need another rewrite.
 ```bash
 npm run typecheck   # tsc --noEmit
 npm run lint        # eslint
-npm test            # vitest (HMAC/JWT/event-router unit tests)
+npm test            # vitest (installation, HMAC, lifecycle, and router tests)
 ```
 
 ## Local development
@@ -123,10 +120,9 @@ npm run dev
 ```
 
 `npm run dev` runs the app against a local PGlite database (`./local.db`).
-**No Postgres install required.** The home page renders without auth, so
-you can iterate immediately. To exercise the Fluid handshake locally, set
-`FLUID_BASE_URL`, `FLUID_DROPLET_UUID`, and `FLUID_DROPLET_SECRET` and
-visit [`/droplet/connect`](http://localhost:3000/droplet/connect).
+**No Postgres install required.** The home page renders without viewer auth,
+so you can iterate immediately. Configure the lifecycle webhook variables only
+when exercising install/uninstall delivery locally.
 
 Open [http://localhost:3000](http://localhost:3000).
 
@@ -138,8 +134,8 @@ project's env vars are set automatically:
 | Env var | Set by Mist |
 | --- | --- |
 | `DATABASE_URL` | The Neon connection string for your dedicated Postgres. |
-| `FLUID_DROPLET_UUID` | The droplet's UUID — used by the auth handler. |
-| `FLUID_DROPLET_SECRET` | HMAC signing key for verifying Fluid-issued JWTs. Existing Mist deployments also use this as the webhook auth fallback. |
+| `FLUID_DROPLET_UUID` | The droplet's UUID, used for lifecycle registration and platform identity. |
+| `FLUID_DROPLET_SECRET` | Compatibility fallback for lifecycle webhook authentication on existing Mist deployments. It is not viewer authentication and is not accepted for regular company events. |
 | `FLUID_WEBHOOK_AUTH_TOKEN` | Bootstrap secret for install/uninstall lifecycle webhooks. It is not accepted for regular company events. New Mist deployments set this explicitly; older lifecycle registrations fall back to `FLUID_DROPLET_SECRET`. |
 | `FLUID_BASE_URL` | The Fluid app's base URL. |
 
