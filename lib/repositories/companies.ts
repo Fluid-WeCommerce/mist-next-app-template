@@ -4,7 +4,7 @@
 // Drizzle query builder, which is identical across the PGlite and Neon drivers.
 
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "../db";
 import { ensureSchema } from "../ensure-schema";
 import { companies, type Company, type RegisteredIds } from "../schema";
@@ -35,6 +35,11 @@ export async function upsertCompany(input: UpsertCompanyInput): Promise<Company>
       .set({ ...stripUndefined(input), active: true, updatedAt: new Date() })
       .where(eq(companies.id, existing.id))
       .returning();
+    await deactivateSupersededShopInstallations(
+      conn,
+      input.fluidShop,
+      input.dropletInstallationUuid,
+    );
     return updated;
   }
 
@@ -42,6 +47,11 @@ export async function upsertCompany(input: UpsertCompanyInput): Promise<Company>
     .insert(companies)
     .values({ id: randomUUID(), ...stripUndefined(input), active: true })
     .returning();
+  await deactivateSupersededShopInstallations(
+    conn,
+    input.fluidShop,
+    input.dropletInstallationUuid,
+  );
   return created;
 }
 
@@ -155,6 +165,25 @@ export async function deactivateCompanyByInstallation(
     .where(eq(companies.id, company.id))
     .returning();
   return updated;
+}
+
+async function deactivateSupersededShopInstallations(
+  conn: Awaited<ReturnType<typeof db>>,
+  fluidShop: string | null | undefined,
+  activeInstallationId: string,
+): Promise<void> {
+  if (!fluidShop) return;
+
+  await conn
+    .update(companies)
+    .set({ active: false, updatedAt: new Date() })
+    .where(
+      and(
+        eq(companies.fluidShop, fluidShop),
+        ne(companies.dropletInstallationUuid, activeInstallationId),
+        eq(companies.active, true),
+      ),
+    );
 }
 
 function stripUndefined<T extends object>(obj: T): Partial<T> {
