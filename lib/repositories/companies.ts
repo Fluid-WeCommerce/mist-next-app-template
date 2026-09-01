@@ -4,7 +4,7 @@
 // Drizzle query builder, which is identical across the PGlite and Neon drivers.
 
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../db";
 import { ensureSchema } from "../ensure-schema";
 import { companies, type Company, type RegisteredIds } from "../schema";
@@ -73,6 +73,28 @@ export async function findCompany(opts: {
   }
 
   return null;
+}
+
+// Resolves request tenancy by the installation UUID Fluid added to the embed.
+// This deliberately has no fluid_shop fallback: request context must identify
+// one exact, active installation.
+export async function findActiveCompanyByInstallation(
+  dropletInstallationUuid: string,
+): Promise<Company | null> {
+  await ensureSchema();
+  const conn = await db();
+  const rows = await conn
+    .select()
+    .from(companies)
+    .where(
+      and(
+        eq(companies.dropletInstallationUuid, dropletInstallationUuid),
+        eq(companies.active, true),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
 }
 
 // Looks up the active company that owns a fluid_shop — used to resolve the

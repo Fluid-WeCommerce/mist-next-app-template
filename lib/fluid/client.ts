@@ -5,6 +5,7 @@
 // lifecycle. Construct it with a company's authentication_token.
 
 import { getFluidApiUrl } from "../app-url";
+import type { Company } from "../schema";
 
 export interface CreateWebhookPayload {
   resource: string;
@@ -121,6 +122,16 @@ export class FluidClient {
 
 export function createFluidClient(authToken: string): FluidClient {
   return new FluidClient(authToken);
+}
+
+export function createFluidClientForInstallation(
+  installation: Company,
+): FluidClient {
+  if (!installation.active || !installation.authenticationToken) {
+    throw new Error("Fluid installation credential is unavailable");
+  }
+
+  return createFluidClient(installation.authenticationToken);
 }
 
 // --- Exchange Token Flow (v2 install handshake) ---
