@@ -27,7 +27,8 @@ export async function fluidInstallationFetch(
     throw new Error("Fluid installation reference is unavailable");
   }
 
-  const headers = new Headers(init.headers);
+  const headers = new Headers(input instanceof Request ? input.headers : undefined);
+  new Headers(init.headers).forEach((value, name) => headers.set(name, value));
   headers.set(FLUID_INSTALLATION_HEADER, installationId);
   return fetchImplementation(input, { ...init, headers });
 }

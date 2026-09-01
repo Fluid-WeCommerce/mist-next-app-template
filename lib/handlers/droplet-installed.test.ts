@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { findCompany } from "../repositories/companies";
+import {
+  deactivateCompanyByInstallation,
+  findCompany,
+  upsertCompany,
+} from "../repositories/companies";
 import { handleDropletInstalled } from "./droplet-installed";
 
 afterEach(() => {
@@ -115,6 +119,47 @@ describe("handleDropletInstalled", () => {
       webhookVerificationToken,
     });
     expect(fetchBoundary).toHaveBeenCalledOnce();
+  });
+
+  it("creates a distinct row when the same shop is reinstalled with a new DRI", async () => {
+    vi.stubEnv("MIST_DEV", "1");
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const fluidShop = `shop-${randomUUID()}`;
+    const oldInstallationId = `dri_${randomUUID().replaceAll("-", "")}`;
+    const oldInstallation = await upsertCompany({
+      fluidCompanyId: 1_616,
+      fluidShop,
+      companyDropletUuid: "drp_template",
+      dropletInstallationUuid: oldInstallationId,
+      authenticationToken: `dit_${randomUUID()}`,
+      webhookVerificationToken: `wvt_${randomUUID()}`,
+    });
+    await deactivateCompanyByInstallation(oldInstallationId);
+    const newInstallationId = `dri_${randomUUID().replaceAll("-", "")}`;
+
+    await handleDropletInstalled({
+      company: {
+        fluid_company_id: 1_616,
+        fluid_shop: fluidShop,
+        company_droplet_uuid: "drp_template",
+        droplet_installation_uuid: newInstallationId,
+        authentication_token: `dit_${randomUUID()}`,
+        webhook_verification_token: `wvt_${randomUUID()}`,
+      },
+    });
+
+    const historicalInstallation = await findCompany({
+      dropletInstallationUuid: oldInstallationId,
+    });
+    const activeInstallation = await findCompany({
+      dropletInstallationUuid: newInstallationId,
+    });
+    expect(historicalInstallation).toMatchObject({
+      id: oldInstallation.id,
+      active: false,
+    });
+    expect(activeInstallation?.id).not.toBe(oldInstallation.id);
+    expect(activeInstallation?.active).toBe(true);
   });
 
   it("rejects an install payload without a valid DRI", async () => {

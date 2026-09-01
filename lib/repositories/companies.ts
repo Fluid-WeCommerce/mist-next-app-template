@@ -14,20 +14,19 @@ export interface UpsertCompanyInput {
   fluidShop?: string | null;
   name?: string | null;
   companyDropletUuid?: string | null;
-  dropletInstallationUuid?: string | null;
+  dropletInstallationUuid: string;
   authenticationToken?: string | null;
   webhookVerificationToken?: string | null;
 }
 
-// Creates or updates a company by its installation UUID (the tenant key),
-// falling back to fluid_shop for legacy installs that lack one.
+// Creates or updates a company by its installation UUID (the tenant key).
+// A shop can be reinstalled with a new DRI, so fluid_shop is never identity.
 export async function upsertCompany(input: UpsertCompanyInput): Promise<Company> {
   await ensureSchema();
   const conn = await db();
 
   const existing = await findCompany({
     dropletInstallationUuid: input.dropletInstallationUuid,
-    fluidShop: input.fluidShop,
   });
 
   if (existing) {
@@ -97,11 +96,24 @@ export async function findActiveCompanyByInstallation(
   return rows[0] ?? null;
 }
 
-// Looks up the active company that owns a fluid_shop — used to resolve the
-// per-company webhook verification token during signature checks.
+// Looks up the active installation that owns a fluid_shop for webhook
+// signature checks. Query activity directly so a historical uninstall cannot
+// hide a later reinstall with the same shop.
 export async function findActiveCompanyByShop(fluidShop: string): Promise<Company | null> {
-  const company = await findCompany({ fluidShop });
-  return company?.active ? company : null;
+  await ensureSchema();
+  const conn = await db();
+  const rows = await conn
+    .select()
+    .from(companies)
+    .where(
+      and(
+        eq(companies.fluidShop, fluidShop),
+        eq(companies.active, true),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
 }
 
 export async function setRegisteredIds(

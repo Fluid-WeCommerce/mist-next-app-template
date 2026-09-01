@@ -54,6 +54,30 @@ describe("fluidInstallationFetch", () => {
     expect(headers.get("X-Request-Id")).toBe("request-123");
   });
 
+  it("preserves headers already present on a Request input", async () => {
+    const outboundRequests: RequestInit[] = [];
+    const fetchBoundary = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        outboundRequests.push(init ?? {});
+        return new Response(null, { status: 204 });
+      },
+    );
+    const input = new Request("https://droplet.example/api/private", {
+      headers: { "If-Match": "resource-version" },
+    });
+
+    await fluidInstallationFetch(
+      "dri_expected",
+      input,
+      undefined,
+      fetchBoundary,
+    );
+
+    const headers = new Headers(outboundRequests[0].headers);
+    expect(headers.get("If-Match")).toBe("resource-version");
+    expect(headers.get(FLUID_INSTALLATION_HEADER)).toBe("dri_expected");
+  });
+
   it("rejects a malformed DRI before making a request", async () => {
     const fetchBoundary = vi.fn<typeof fetch>();
 

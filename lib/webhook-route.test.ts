@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST } from "../app/api/webhooks/route";
 import { hmacSha256 } from "./crypto";
 import { db } from "./db";
-import { upsertCompany } from "./repositories/companies";
+import {
+  deactivateCompanyByInstallation,
+  upsertCompany,
+} from "./repositories/companies";
 import { webhooks } from "./schema";
 
 afterEach(() => {
@@ -73,6 +76,56 @@ describe("webhook route", () => {
         safe: "kept",
       },
     });
+  });
+
+  it("authenticates the active reinstall when an old row has the same shop", async () => {
+    vi.stubEnv("MIST_DEV", "1");
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fluidShop = `shop-${randomUUID()}`;
+    const oldInstallationId = `dri_${randomUUID().replaceAll("-", "")}`;
+    await upsertCompany({
+      fluidCompanyId: 1_717,
+      fluidShop,
+      companyDropletUuid: "drp_template",
+      dropletInstallationUuid: oldInstallationId,
+      authenticationToken: `dit_${randomUUID()}`,
+      webhookVerificationToken: `wvt_${randomUUID()}`,
+    });
+    await deactivateCompanyByInstallation(oldInstallationId);
+    const webhookVerificationToken = `wvt_${randomUUID()}`;
+    await upsertCompany({
+      fluidCompanyId: 1_717,
+      fluidShop,
+      companyDropletUuid: "drp_template",
+      dropletInstallationUuid: `dri_${randomUUID().replaceAll("-", "")}`,
+      authenticationToken: `dit_${randomUUID()}`,
+      webhookVerificationToken,
+    });
+    const body = JSON.stringify({
+      resource: `reinstall${randomUUID().replaceAll("-", "")}`,
+      event: "received",
+      payload: { id: "event-456" },
+    });
+    const timestamp = Math.floor(Date.now() / 1_000).toString();
+    const signature = hmacSha256(
+      webhookVerificationToken,
+      `${timestamp}.${body}`,
+    ).toString("hex");
+    const request = new NextRequest("https://droplet.example/api/webhooks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Fluid-Shop": fluidShop,
+        "X-Fluid-Signature": signature,
+        "X-Fluid-Timestamp": timestamp,
+      },
+      body,
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(202);
   });
 
   it("rejects the global lifecycle token for a regular company webhook", async () => {
