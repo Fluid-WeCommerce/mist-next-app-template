@@ -1,9 +1,8 @@
 // Registration service.
 //
-// On install, walks the declarative droplet config and registers every enabled
-// webhook, callback, and drop zone with Fluid on the installing company's
-// behalf. Returns the created ids so they can be persisted and later cleaned up.
-// Failures are logged and skipped — one bad registration never aborts install.
+// Registers enabled features sequentially and reports each successful creation
+// so install handling can persist progress before acknowledging the lifecycle
+// event. Redelivery resumes from the stored prefix instead of recreating it.
 
 import { FluidClient } from "../fluid/client";
 import { getAppBaseUrl } from "../app-url";
@@ -11,61 +10,85 @@ import type { RegisteredIds } from "../schema";
 import { getWebhookAuthToken } from "../webhook-auth-token";
 import { dropletConfig } from "./droplet.config";
 
-export async function registerDropletFeatures(authToken: string): Promise<RegisteredIds> {
+const emptyRegisteredIds = (): RegisteredIds => ({
+  webhookIds: [],
+  callbackUuids: [],
+  dropZoneUuids: [],
+});
+
+export async function registerDropletFeatures(
+  authToken: string,
+  existing: RegisteredIds | null | undefined = null,
+  onProgress?: (registered: RegisteredIds) => Promise<void>,
+): Promise<RegisteredIds> {
   const client = new FluidClient(authToken);
   const baseUrl = getAppBaseUrl();
   const webhookUrl = `${baseUrl}/api/webhooks`;
   const webhookAuthToken = getWebhookAuthToken() || "";
+  const registered = existing
+    ? {
+        webhookIds: [...existing.webhookIds],
+        callbackUuids: [...existing.callbackUuids],
+        dropZoneUuids: [...existing.dropZoneUuids],
+      }
+    : emptyRegisteredIds();
 
-  const registered: RegisteredIds = {
-    webhookIds: [],
-    callbackUuids: [],
-    dropZoneUuids: [],
-  };
-
-  for (const webhook of dropletConfig.webhooks.filter((w) => w.enabled)) {
-    await isolate(`webhook ${webhook.resource}.${webhook.event}`, async () => {
-      const res = await client.createWebhook({
-        resource: webhook.resource,
-        event: webhook.event,
-        url: webhookUrl,
-        auth_token: webhookAuthToken,
-      });
-      registered.webhookIds.push(String(res.webhook.id));
+  const webhooks = dropletConfig.webhooks.filter((webhook) => webhook.enabled);
+  for (let index = registered.webhookIds.length; index < webhooks.length; index += 1) {
+    const webhook = webhooks[index];
+    const response = await client.createWebhook({
+      resource: webhook.resource,
+      event: webhook.event,
+      url: webhookUrl,
+      auth_token: webhookAuthToken,
     });
+    registered.webhookIds.push(String(response.webhook.id));
+    await onProgress?.(cloneRegisteredIds(registered));
   }
 
-  for (const callback of dropletConfig.callbacks.filter((c) => c.enabled)) {
-    await isolate(`callback ${callback.definition_name}`, async () => {
-      const res = await client.createCallback({
-        definition_name: callback.definition_name,
-        url: `${baseUrl}${callback.url}`,
-      });
-      registered.callbackUuids.push(res.callback_registration.uuid);
+  const callbacks = dropletConfig.callbacks.filter((callback) => callback.enabled);
+  for (
+    let index = registered.callbackUuids.length;
+    index < callbacks.length;
+    index += 1
+  ) {
+    const callback = callbacks[index];
+    const response = await client.createCallback({
+      definition_name: callback.definition_name,
+      url: `${baseUrl}${callback.url}`,
     });
+    registered.callbackUuids.push(response.callback_registration.uuid);
+    await onProgress?.(cloneRegisteredIds(registered));
   }
 
-  for (const dropzone of dropletConfig.dropzones.filter((d) => d.enabled)) {
-    await isolate(`dropzone ${dropzone.uuid}`, async () => {
-      const res = await client.createDropZone({
-        name: dropzone.name,
-        uuid: dropzone.uuid,
-        settings: { page: dropzone.page, zone: dropzone.zone, priority: dropzone.priority },
-        embed_url: `${baseUrl}${dropzone.embedPath}`,
-      });
-      registered.dropZoneUuids.push(res.drop_zone.uuid || dropzone.uuid);
+  const dropzones = dropletConfig.dropzones.filter((dropzone) => dropzone.enabled);
+  for (
+    let index = registered.dropZoneUuids.length;
+    index < dropzones.length;
+    index += 1
+  ) {
+    const dropzone = dropzones[index];
+    const response = await client.createDropZone({
+      name: dropzone.name,
+      uuid: dropzone.uuid,
+      settings: {
+        page: dropzone.page,
+        zone: dropzone.zone,
+        priority: dropzone.priority,
+      },
+      embed_url: `${baseUrl}${dropzone.embedPath}`,
     });
+    registered.dropZoneUuids.push(response.drop_zone.uuid || dropzone.uuid);
+    await onProgress?.(cloneRegisteredIds(registered));
   }
 
   return registered;
 }
 
-// Runs one registration best-effort: a failure is logged and skipped so a
-// single bad feature never aborts the whole install.
-async function isolate(label: string, fn: () => Promise<void>): Promise<void> {
-  try {
-    await fn();
-  } catch (err) {
-    console.error(`[register] ${label} failed:`, err);
-  }
+function cloneRegisteredIds(registered: RegisteredIds): RegisteredIds {
+  return {
+    webhookIds: [...registered.webhookIds],
+    callbackUuids: [...registered.callbackUuids],
+    dropZoneUuids: [...registered.dropZoneUuids],
+  };
 }

@@ -7,6 +7,8 @@
 import { upsertCompany, setRegisteredIds } from "../repositories/companies";
 import { registerDropletFeatures } from "../config/registration-service";
 import { exchangeInstallToken } from "../fluid/client";
+import { isFluidInstallationReference } from "../fluid/installation-reference";
+import { ensureSchema } from "../ensure-schema";
 
 interface InstalledPayload {
   company?: {
@@ -39,6 +41,7 @@ export async function handleDropletInstalled(payload: unknown): Promise<void> {
 
   const exchangeToken = company.credentials?.exchange_token;
   if (!authenticationToken && exchangeToken) {
+    await ensureSchema();
     const exchanged = await exchangeInstallToken(
       exchangeToken,
       company.credentials?.exchange_endpoint,
@@ -49,6 +52,16 @@ export async function handleDropletInstalled(payload: unknown): Promise<void> {
     dropletUuid = exchanged.droplet_installation.droplet_uuid;
     fluidCompanyId = exchanged.droplet_installation.fluid_company_id;
     fluidShop = exchanged.droplet_installation.fluid_shop;
+  }
+
+  if (!isFluidInstallationReference(dropletInstallationUuid)) {
+    throw new Error("droplet.installed: missing or invalid `droplet_installation_uuid`");
+  }
+  if (!authenticationToken) {
+    throw new Error("droplet.installed: missing `authentication_token`");
+  }
+  if (!webhookVerificationToken) {
+    throw new Error("droplet.installed: missing `webhook_verification_token`");
   }
 
   const saved = await upsertCompany({
@@ -65,14 +78,11 @@ export async function handleDropletInstalled(payload: unknown): Promise<void> {
 
   console.log(`[droplet.installed] company ${saved.id} (${saved.name ?? "unknown"}) active`);
 
-  if (!authenticationToken) {
-    console.warn(
-      `[droplet.installed] company ${saved.id} has no authentication_token; skipping feature registration`,
-    );
-    return;
-  }
-
-  const registered = await registerDropletFeatures(authenticationToken);
+  const registered = await registerDropletFeatures(
+    authenticationToken,
+    saved.registeredIds,
+    (progress) => setRegisteredIds(saved.id, progress),
+  );
   await setRegisteredIds(saved.id, registered);
   console.log(
     `[droplet.installed] registered ${registered.webhookIds?.length ?? 0} webhooks, ` +

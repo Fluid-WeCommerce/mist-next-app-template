@@ -4,7 +4,7 @@
 // Drizzle query builder, which is identical across the PGlite and Neon drivers.
 
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "../db";
 import { ensureSchema } from "../ensure-schema";
 import { companies, type Company, type RegisteredIds } from "../schema";
@@ -14,20 +14,19 @@ export interface UpsertCompanyInput {
   fluidShop?: string | null;
   name?: string | null;
   companyDropletUuid?: string | null;
-  dropletInstallationUuid?: string | null;
+  dropletInstallationUuid: string;
   authenticationToken?: string | null;
   webhookVerificationToken?: string | null;
 }
 
-// Creates or updates a company by its installation UUID (the tenant key),
-// falling back to fluid_shop for legacy installs that lack one.
+// Creates or updates a company by its installation UUID (the tenant key).
+// A shop can be reinstalled with a new DRI, so fluid_shop is never identity.
 export async function upsertCompany(input: UpsertCompanyInput): Promise<Company> {
   await ensureSchema();
   const conn = await db();
 
   const existing = await findCompany({
     dropletInstallationUuid: input.dropletInstallationUuid,
-    fluidShop: input.fluidShop,
   });
 
   if (existing) {
@@ -36,6 +35,11 @@ export async function upsertCompany(input: UpsertCompanyInput): Promise<Company>
       .set({ ...stripUndefined(input), active: true, updatedAt: new Date() })
       .where(eq(companies.id, existing.id))
       .returning();
+    await deactivateSupersededShopInstallations(
+      conn,
+      input.fluidShop,
+      input.dropletInstallationUuid,
+    );
     return updated;
   }
 
@@ -43,6 +47,11 @@ export async function upsertCompany(input: UpsertCompanyInput): Promise<Company>
     .insert(companies)
     .values({ id: randomUUID(), ...stripUndefined(input), active: true })
     .returning();
+  await deactivateSupersededShopInstallations(
+    conn,
+    input.fluidShop,
+    input.dropletInstallationUuid,
+  );
   return created;
 }
 
@@ -75,11 +84,46 @@ export async function findCompany(opts: {
   return null;
 }
 
-// Looks up the active company that owns a fluid_shop — used to resolve the
-// per-company webhook verification token during signature checks.
+// Resolves request tenancy by the installation UUID Fluid added to the embed.
+// This deliberately has no fluid_shop fallback: request context must identify
+// one exact, active installation.
+export async function findActiveCompanyByInstallation(
+  dropletInstallationUuid: string,
+): Promise<Company | null> {
+  await ensureSchema();
+  const conn = await db();
+  const rows = await conn
+    .select()
+    .from(companies)
+    .where(
+      and(
+        eq(companies.dropletInstallationUuid, dropletInstallationUuid),
+        eq(companies.active, true),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+// Looks up the active installation that owns a fluid_shop for webhook
+// signature checks. Query activity directly so a historical uninstall cannot
+// hide a later reinstall with the same shop.
 export async function findActiveCompanyByShop(fluidShop: string): Promise<Company | null> {
-  const company = await findCompany({ fluidShop });
-  return company?.active ? company : null;
+  await ensureSchema();
+  const conn = await db();
+  const rows = await conn
+    .select()
+    .from(companies)
+    .where(
+      and(
+        eq(companies.fluidShop, fluidShop),
+        eq(companies.active, true),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
 }
 
 export async function setRegisteredIds(
@@ -93,13 +137,25 @@ export async function setRegisteredIds(
     .where(eq(companies.id, companyId));
 }
 
-// Marks a company inactive on uninstall. Returns the deactivated row (with its
-// stored credentials) so the caller can clean up remote registrations.
-export async function deactivateCompany(opts: {
-  dropletInstallationUuid?: string | null;
-  fluidShop?: string | null;
-}): Promise<Company | null> {
-  const company = await findCompany(opts);
+export async function eraseCompanyCredentials(companyId: string): Promise<void> {
+  const conn = await db();
+  await conn
+    .update(companies)
+    .set({
+      authenticationToken: null,
+      webhookVerificationToken: null,
+      registeredIds: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(companies.id, companyId));
+}
+
+// Marks one exact installation inactive on uninstall. Returns the deactivated
+// row with its credentials so the caller can clean up remote registrations.
+export async function deactivateCompanyByInstallation(
+  dropletInstallationUuid: string,
+): Promise<Company | null> {
+  const company = await findCompany({ dropletInstallationUuid });
   if (!company) return null;
 
   const conn = await db();
@@ -109,6 +165,25 @@ export async function deactivateCompany(opts: {
     .where(eq(companies.id, company.id))
     .returning();
   return updated;
+}
+
+async function deactivateSupersededShopInstallations(
+  conn: Awaited<ReturnType<typeof db>>,
+  fluidShop: string | null | undefined,
+  activeInstallationId: string,
+): Promise<void> {
+  if (!fluidShop) return;
+
+  await conn
+    .update(companies)
+    .set({ active: false, updatedAt: new Date() })
+    .where(
+      and(
+        eq(companies.fluidShop, fluidShop),
+        ne(companies.dropletInstallationUuid, activeInstallationId),
+        eq(companies.active, true),
+      ),
+    );
 }
 
 function stripUndefined<T extends object>(obj: T): Partial<T> {

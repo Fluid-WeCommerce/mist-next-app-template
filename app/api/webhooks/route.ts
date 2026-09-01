@@ -1,14 +1,14 @@
 // Webhook ingestion endpoint.
 //
-// Receives webhooks from Fluid, authenticates them (HMAC-SHA256 signature with
-// replay protection, or a legacy shared-secret fallback), records every event
-// in the audit log, and routes it to the registered handler.
+// Receives webhooks from Fluid, authenticates regular events with the
+// installation's HMAC-SHA256 credential and lifecycle events with their
+// bootstrap secret, records a redacted audit payload, and routes the event.
 //
 // Fluid sends:
 //   X-Fluid-Signature  HMAC-SHA256 of "{timestamp}.{rawBody}"
 //   X-Fluid-Timestamp  unix seconds
 //   X-Fluid-Shop       fluid_shop of the sending company
-//   AUTH_TOKEN         legacy shared secret (fallback)
+//   AUTH_TOKEN         lifecycle bootstrap fallback only
 
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
@@ -28,6 +28,7 @@ import {
   getWebhookAuthToken,
   WEBHOOK_AUTH_TOKEN_ENV_DESCRIPTION,
 } from "@/lib/webhook-auth-token";
+import { redactWebhookPayload } from "@/lib/webhook-audit";
 
 // node:crypto + Neon/PGlite need the Node runtime, not the edge runtime.
 export const runtime = "nodejs";
@@ -66,9 +67,9 @@ function authenticateLifecycle(headers: WebhookHeaders, rawBody: string): AuthRe
   return { authenticated: false, error: result.error };
 }
 
-// Regular webhooks prefer per-company HMAC (keyed by the company's
-// webhook_verification_token, looked up via X-Fluid-Shop) and fall back to the
-// global shared-secret AUTH_TOKEN.
+// Regular webhooks require per-installation HMAC, keyed by the installation's
+// webhook_verification_token and looked up via X-Fluid-Shop. The global secret
+// is reserved for install/uninstall lifecycle delivery.
 async function authenticateWebhook(headers: WebhookHeaders, rawBody: string): Promise<AuthResult> {
   if (headers.signature && headers.timestamp) {
     if (!headers.fluidShop) {
@@ -81,10 +82,9 @@ async function authenticateWebhook(headers: WebhookHeaders, rawBody: string): Pr
     }
 
     if (!company.webhookVerificationToken) {
-      // Install may predate per-company tokens — fall back to the global token
-      // but keep companyId so the audit row is still linked.
       return {
-        ...authenticateWithSharedSecret(headers.authToken),
+        authenticated: false,
+        error: "Installation has no webhook verification credential",
         companyId: company.id,
       };
     }
@@ -100,7 +100,10 @@ async function authenticateWebhook(headers: WebhookHeaders, rawBody: string): Pr
       : { authenticated: false, error: result.error, companyId: company.id };
   }
 
-  return authenticateWithSharedSecret(headers.authToken);
+  return {
+    authenticated: false,
+    error: "Regular webhooks require an installation signature",
+  };
 }
 
 function authenticateWithSharedSecret(authToken: string | null): AuthResult {
@@ -142,8 +145,8 @@ export async function POST(request: NextRequest) {
   // Handlers expect the inner payload (with `company`), not the envelope.
   const payloadForHandler = body.payload ?? body;
 
-  // Authenticate: lifecycle events use the global secret, everything else uses
-  // per-company HMAC (falling back to the shared secret).
+  // Authenticate: lifecycle events use the bootstrap secret; every regular
+  // company webhook requires its active installation's HMAC credential.
   const isLifecycle =
     resource === "droplet" && (event === "installed" || event === "uninstalled");
   const headers = getWebhookHeaders(request.headers);
@@ -170,7 +173,7 @@ export async function POST(request: NextRequest) {
     event,
     eventType,
     version: version ?? null,
-    payload: body as unknown,
+    payload: redactWebhookPayload(body),
     processed: false,
     companyId: authenticatedCompanyId ?? null,
   });

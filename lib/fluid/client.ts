@@ -5,6 +5,7 @@
 // lifecycle. Construct it with a company's authentication_token.
 
 import { getFluidApiUrl } from "../app-url";
+import type { Company } from "../schema";
 
 export interface CreateWebhookPayload {
   resource: string;
@@ -46,6 +47,17 @@ export interface DropZoneResponse {
   drop_zone: { uuid?: string; id?: number; [k: string]: unknown };
 }
 
+export class FluidApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly path: string,
+    public readonly body: string,
+  ) {
+    super(`Fluid API error: ${status} on ${path} - ${body}`);
+    this.name = "FluidApiError";
+  }
+}
+
 export class FluidClient {
   private baseUrl: string;
   private authToken: string;
@@ -65,14 +77,13 @@ export class FluidClient {
       },
     });
 
+    const responseBody = await response.text();
     if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(
-        `Fluid API error: ${response.status} ${response.statusText} - ${errorBody}`,
-      );
+      throw new FluidApiError(response.status, path, responseBody);
     }
+    if (responseBody === "") return undefined as T;
 
-    return response.json() as Promise<T>;
+    return JSON.parse(responseBody) as T;
   }
 
   // --- Webhooks ---
@@ -121,6 +132,16 @@ export class FluidClient {
 
 export function createFluidClient(authToken: string): FluidClient {
   return new FluidClient(authToken);
+}
+
+export function createFluidClientForInstallation(
+  installation: Company,
+): FluidClient {
+  if (!installation.active || !installation.authenticationToken) {
+    throw new Error("Fluid installation credential is unavailable");
+  }
+
+  return createFluidClient(installation.authenticationToken);
 }
 
 // --- Exchange Token Flow (v2 install handshake) ---

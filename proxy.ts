@@ -3,8 +3,8 @@
 // Fluid.
 //
 // This is defense-in-depth alongside the client-side <EmbedGuard>. It does not
-// authenticate — webhook auth lives in the route (HMAC), and page auth is your
-// getFluidSession() check.
+// authenticate — webhook auth lives in the route (HMAC), while embedded request
+// tenancy is resolved from DRI by each installation-scoped route.
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -26,6 +26,7 @@ export function proxy(request: NextRequest) {
     "Content-Security-Policy",
     `frame-ancestors 'self' ${FLUID_FRAME_ANCESTORS}`,
   );
+  res.headers.set("Referrer-Policy", "no-referrer");
   return res;
 }
 
