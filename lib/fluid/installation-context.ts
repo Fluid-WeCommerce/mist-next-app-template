@@ -1,7 +1,11 @@
 import { findActiveCompanyByInstallation } from "../repositories/companies";
 import type { Company } from "../schema";
+import {
+  FLUID_INSTALLATION_HEADER,
+  isFluidInstallationReference,
+} from "./installation-reference";
 
-export const FLUID_INSTALLATION_HEADER = "x-fluid-droplet-installation";
+export { FLUID_INSTALLATION_HEADER } from "./installation-reference";
 
 export type FluidInstallationContext = {
   installationId: string;
@@ -21,7 +25,7 @@ export async function resolveFluidInstallation(
   request: Request,
 ): Promise<FluidInstallationContext> {
   const installationId = request.headers.get(FLUID_INSTALLATION_HEADER);
-  if (!installationId || !/^dri_[A-Za-z0-9_-]+$/.test(installationId)) {
+  if (!isFluidInstallationReference(installationId)) {
     throw new FluidInstallationContextError();
   }
 

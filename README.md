@@ -18,7 +18,9 @@ customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 | `lib/db.ts` | Environment-aware Postgres client: [PGlite](https://github.com/electric-sql/pglite) in local dev, [Neon](https://neon.tech) serverless in production. Same Drizzle interface either way. |
 | `lib/schema.ts` / `lib/ensure-schema.ts` | Drizzle tables (`companies`, `webhooks`) + idempotent bootstrap DDL that runs on both PGlite and Neon. |
 | `lib/webhook-verification.ts` / `lib/jwt.ts` | HMAC-SHA256 webhook signature verification (with a 5-min replay window) and HS256 JWT verification. |
-| `lib/fluid/client.ts` | `FluidClient` — calls the Fluid API on a company's behalf (create/delete webhooks, callbacks, drop zones) plus the v2 `exchangeInstallToken` handshake. |
+| `lib/fluid/client.ts` | `FluidClient` — calls the Fluid API on an installation's behalf, constructs clients from the resolved installation DIT, and performs the v2 `exchangeInstallToken` handshake. |
+| `lib/fluid/installation-reference.ts` | Reads the iframe's DRI bootstrap parameter and attaches it to same-origin API requests. |
+| `lib/fluid/installation-context.ts` | Resolves one exact active installation from the DRI request header; this is the server-side tenancy boundary. |
 | `lib/events/` + `lib/handlers/` | Event router and the install/uninstall lifecycle handlers. |
 | `lib/config/droplet.config.ts` | Declare the webhooks, callbacks, and drop zones your droplet needs — enabled entries are auto-registered on install and cleaned up on uninstall. |
 | `lib/fluid-session.ts` | `getFluidSession()` reads the session cookie set by the auth handler — call it from any page or route that needs the visitor's identity. |
@@ -49,6 +51,54 @@ This template is a full Fluid droplet, not just a landing page:
 To add an event handler: write it in `lib/handlers/`, register it in
 `lib/handlers/index.ts`, and enable the matching webhook in
 `lib/config/droplet.config.ts`.
+
+## Installation context for embedded requests
+
+Fluid adds the installation UUID to the initial iframe URL as `?dri=dri_...`.
+Treat that value as an installation reference: it selects the active company
+installation and its backend-only DIT. It does **not** authenticate the Fluid
+user viewing the iframe.
+
+Capture the reference in browser memory and use the shared fetch wrapper for
+same-origin application API calls:
+
+```ts
+import {
+  fluidInstallationFetch,
+  readFluidInstallationReference,
+} from "@/lib/fluid/installation-reference";
+
+const installationId = readFluidInstallationReference(window.location.href);
+if (!installationId) throw new Error("Fluid installation context not found");
+
+await fluidInstallationFetch(installationId, "/api/private-resource");
+```
+
+After capturing it, remove `dri` from the visible browser URL with
+`history.replaceState` where the page architecture permits. UI responses also
+send `Referrer-Policy: no-referrer` so the bootstrap URL is not disclosed as a
+referrer.
+
+Every installation-scoped route must resolve the header before reading local
+data or calling Fluid:
+
+```ts
+import { createFluidClientForInstallation } from "@/lib/fluid/client";
+import { resolveFluidInstallation } from "@/lib/fluid/installation-context";
+
+const context = await resolveFluidInstallation(request);
+const fluid = createFluidClientForInstallation(context.installation);
+```
+
+Never fall back to `fluid_shop`, a client-provided company id, a shared
+environment token, or the only row in the database. Scope every local read and
+write through `context.installation` / `context.companyId`.
+
+This is an interim tenancy and credential-selection contract. A holder of a
+valid DRI can still invoke the Mist backend. The future OAuth/session-token
+implementation must replace the resolver's unverified request input with the
+signed DRI claim and replace DIT selection behind the client factory; route
+business logic should not need another rewrite.
 
 ## Checks
 

@@ -26,6 +26,7 @@ export function proxy(request: NextRequest) {
     "Content-Security-Policy",
     `frame-ancestors 'self' ${FLUID_FRAME_ANCESTORS}`,
   );
+  res.headers.set("Referrer-Policy", "no-referrer");
   return res;
 }
 
