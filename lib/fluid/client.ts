@@ -47,6 +47,17 @@ export interface DropZoneResponse {
   drop_zone: { uuid?: string; id?: number; [k: string]: unknown };
 }
 
+export class FluidApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly path: string,
+    public readonly body: string,
+  ) {
+    super(`Fluid API error: ${status} on ${path} - ${body}`);
+    this.name = "FluidApiError";
+  }
+}
+
 export class FluidClient {
   private baseUrl: string;
   private authToken: string;
@@ -68,9 +79,7 @@ export class FluidClient {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(
-        `Fluid API error: ${response.status} ${response.statusText} - ${errorBody}`,
-      );
+      throw new FluidApiError(response.status, path, errorBody);
     }
 
     return response.json() as Promise<T>;

@@ -1,8 +1,8 @@
 // Handles the `droplet.uninstalled` lifecycle webhook.
 //
-// Deactivates the company record and best-effort removes every Fluid
-// registration created on install. Repeated delivery remains safe: the row is
-// already inactive and its credentials have already been erased.
+// Deactivates the company record and removes every Fluid registration created
+// on install. Cleanup failures retain credentials and IDs so webhook redelivery
+// can retry; credentials are erased only after complete cleanup.
 
 import {
   deactivateCompanyByInstallation,

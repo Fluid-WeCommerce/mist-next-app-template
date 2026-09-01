@@ -134,6 +134,7 @@ export async function eraseCompanyCredentials(companyId: string): Promise<void> 
     .set({
       authenticationToken: null,
       webhookVerificationToken: null,
+      registeredIds: null,
       updatedAt: new Date(),
     })
     .where(eq(companies.id, companyId));
