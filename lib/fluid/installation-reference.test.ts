@@ -33,6 +33,7 @@ describe("readFluidInstallationReference", () => {
 
 describe("fluidInstallationFetch", () => {
   it("adds the DRI header while preserving caller headers", async () => {
+    vi.stubGlobal("location", { origin: "https://droplet.example" });
     const outboundRequests: Array<{
       input: RequestInfo | URL;
       init?: RequestInit;
@@ -83,6 +84,27 @@ describe("fluidInstallationFetch", () => {
     expect(headers.get(FLUID_INSTALLATION_HEADER)).toBe("dri_expected");
   });
 
+  it.each([
+    ["reverse solidus", "/\\\\evil.example/collect"],
+    ["tab normalization", "/\t/evil.example/collect"],
+    ["newline normalization", "/\n/evil.example/collect"],
+  ])("rejects a cross-origin target after %s", async (_case, target) => {
+    vi.stubGlobal("location", { origin: "https://droplet.example" });
+    const fetchBoundary = vi.fn<typeof fetch>();
+
+    const request = fluidInstallationFetch(
+      "dri_expected",
+      target,
+      undefined,
+      fetchBoundary,
+    );
+
+    await expect(request).rejects.toThrow(
+      "Fluid installation fetch must stay on the current origin",
+    );
+    expect(fetchBoundary).not.toHaveBeenCalled();
+  });
+
   it("rejects a cross-origin target before disclosing the DRI", async () => {
     vi.stubGlobal("location", { origin: "https://droplet.example" });
     const fetchBoundary = vi.fn<typeof fetch>();
@@ -117,6 +139,7 @@ describe("fluidInstallationFetch", () => {
   });
 
   it("overwrites a caller-supplied installation header", async () => {
+    vi.stubGlobal("location", { origin: "https://droplet.example" });
     const outboundRequests: RequestInit[] = [];
     const fetchBoundary = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -134,5 +157,25 @@ describe("fluidInstallationFetch", () => {
 
     const headers = new Headers(outboundRequests[0].headers);
     expect(headers.get(FLUID_INSTALLATION_HEADER)).toBe("dri_expected");
+  });
+
+  it("prevents callers from following redirects with the DRI header", async () => {
+    vi.stubGlobal("location", { origin: "https://droplet.example" });
+    const outboundRequests: RequestInit[] = [];
+    const fetchBoundary = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        outboundRequests.push(init ?? {});
+        return new Response(null, { status: 204 });
+      },
+    );
+
+    await fluidInstallationFetch(
+      "dri_expected",
+      "/api/private",
+      { redirect: "follow" },
+      fetchBoundary,
+    );
+
+    expect(outboundRequests[0].redirect).toBe("error");
   });
 });

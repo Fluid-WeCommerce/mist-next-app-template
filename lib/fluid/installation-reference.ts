@@ -33,14 +33,10 @@ export async function fluidInstallationFetch(
   const headers = new Headers(input instanceof Request ? input.headers : undefined);
   new Headers(init.headers).forEach((value, name) => headers.set(name, value));
   headers.set(FLUID_INSTALLATION_HEADER, installationId);
-  return fetchImplementation(input, { ...init, headers });
+  return fetchImplementation(input, { ...init, headers, redirect: "error" });
 }
 
 function isCurrentOrigin(input: RequestInfo | URL): boolean {
-  if (typeof input === "string" && input.startsWith("/") && !input.startsWith("//")) {
-    return true;
-  }
-
   const currentOrigin = globalThis.location?.origin;
   if (!currentOrigin) return false;
 
