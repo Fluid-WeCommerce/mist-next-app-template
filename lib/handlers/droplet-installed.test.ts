@@ -6,9 +6,13 @@ import {
   findCompany,
   upsertCompany,
 } from "../repositories/companies";
+import { dropletConfig } from "../config/droplet.config";
 import { handleDropletInstalled } from "./droplet-installed";
 
 afterEach(() => {
+  for (const webhook of dropletConfig.webhooks) webhook.enabled = false;
+  for (const callback of dropletConfig.callbacks) callback.enabled = false;
+  for (const dropzone of dropletConfig.dropzones) dropzone.enabled = false;
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -120,6 +124,70 @@ describe("handleDropletInstalled", () => {
       webhookVerificationToken,
     });
     expect(fetchBoundary).toHaveBeenCalledOnce();
+  });
+
+  it("persists registration progress and resumes after redelivery", async () => {
+    vi.stubEnv("MIST_DEV", "1");
+    vi.stubEnv("APP_URL", "https://droplet.example");
+    vi.stubEnv("FLUID_WEBHOOK_AUTH_TOKEN", "lifecycle-secret");
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    dropletConfig.webhooks[0].enabled = true;
+    dropletConfig.webhooks[1].enabled = true;
+    const installationId = `dri_${randomUUID().replaceAll("-", "")}`;
+    const fluidShop = `shop-${randomUUID()}`;
+    const company = {
+      fluid_company_id: 1_515,
+      fluid_shop: fluidShop,
+      company_droplet_uuid: "drp_template",
+      droplet_installation_uuid: installationId,
+      authentication_token: `dit_${randomUUID()}`,
+      webhook_verification_token: `wvt_${randomUUID()}`,
+    };
+    let requestNumber = 0;
+    const firstAttempt = vi.fn(async () => {
+      requestNumber += 1;
+      if (requestNumber === 2) {
+        return new Response("temporary failure", { status: 500 });
+      }
+      return new Response(JSON.stringify({ webhook: { id: "webhook-created" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", firstAttempt);
+
+    await expect(handleDropletInstalled({ company })).rejects.toThrow(
+      "Fluid API error: 500",
+    );
+
+    const partiallyRegistered = await findCompany({
+      dropletInstallationUuid: installationId,
+    });
+    expect(firstAttempt).toHaveBeenCalledTimes(2);
+    expect(partiallyRegistered?.registeredIds).toMatchObject({
+      webhookIds: ["webhook-created"],
+    });
+
+    const retryBodies: string[] = [];
+    const retry = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      retryBodies.push(String(init?.body));
+      return new Response(JSON.stringify({ webhook: { id: "webhook-updated" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", retry);
+
+    await handleDropletInstalled({ company });
+
+    const completelyRegistered = await findCompany({
+      dropletInstallationUuid: installationId,
+    });
+    expect(retry).toHaveBeenCalledOnce();
+    expect(JSON.parse(retryBodies[0]).webhook.event).toBe("updated");
+    expect(completelyRegistered?.registeredIds).toMatchObject({
+      webhookIds: ["webhook-created", "webhook-updated"],
+    });
   });
 
   it("creates a distinct row when the same shop is reinstalled with a new DRI", async () => {

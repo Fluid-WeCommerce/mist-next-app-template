@@ -78,7 +78,11 @@ export async function handleDropletInstalled(payload: unknown): Promise<void> {
 
   console.log(`[droplet.installed] company ${saved.id} (${saved.name ?? "unknown"}) active`);
 
-  const registered = await registerDropletFeatures(authenticationToken);
+  const registered = await registerDropletFeatures(
+    authenticationToken,
+    saved.registeredIds,
+    (progress) => setRegisteredIds(saved.id, progress),
+  );
   await setRegisteredIds(saved.id, registered);
   console.log(
     `[droplet.installed] registered ${registered.webhookIds?.length ?? 0} webhooks, ` +
