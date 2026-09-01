@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FLUID_INSTALLATION_HEADER,
   fluidInstallationFetch,
   readFluidInstallationReference,
 } from "./installation-reference";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("readFluidInstallationReference", () => {
   it("reads a valid DRI from the iframe bootstrap URL", () => {
@@ -62,6 +66,7 @@ describe("fluidInstallationFetch", () => {
         return new Response(null, { status: 204 });
       },
     );
+    vi.stubGlobal("location", { origin: "https://droplet.example" });
     const input = new Request("https://droplet.example/api/private", {
       headers: { "If-Match": "resource-version" },
     });
@@ -76,6 +81,23 @@ describe("fluidInstallationFetch", () => {
     const headers = new Headers(outboundRequests[0].headers);
     expect(headers.get("If-Match")).toBe("resource-version");
     expect(headers.get(FLUID_INSTALLATION_HEADER)).toBe("dri_expected");
+  });
+
+  it("rejects a cross-origin target before disclosing the DRI", async () => {
+    vi.stubGlobal("location", { origin: "https://droplet.example" });
+    const fetchBoundary = vi.fn<typeof fetch>();
+
+    const request = fluidInstallationFetch(
+      "dri_expected",
+      "https://third-party.example/collect",
+      undefined,
+      fetchBoundary,
+    );
+
+    await expect(request).rejects.toThrow(
+      "Fluid installation fetch must stay on the current origin",
+    );
+    expect(fetchBoundary).not.toHaveBeenCalled();
   });
 
   it("rejects a malformed DRI before making a request", async () => {

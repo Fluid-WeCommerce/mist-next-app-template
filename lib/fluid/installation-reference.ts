@@ -26,9 +26,28 @@ export async function fluidInstallationFetch(
   if (!isFluidInstallationReference(installationId)) {
     throw new Error("Fluid installation reference is unavailable");
   }
+  if (!isCurrentOrigin(input)) {
+    throw new Error("Fluid installation fetch must stay on the current origin");
+  }
 
   const headers = new Headers(input instanceof Request ? input.headers : undefined);
   new Headers(init.headers).forEach((value, name) => headers.set(name, value));
   headers.set(FLUID_INSTALLATION_HEADER, installationId);
   return fetchImplementation(input, { ...init, headers });
+}
+
+function isCurrentOrigin(input: RequestInfo | URL): boolean {
+  if (typeof input === "string" && input.startsWith("/") && !input.startsWith("//")) {
+    return true;
+  }
+
+  const currentOrigin = globalThis.location?.origin;
+  if (!currentOrigin) return false;
+
+  try {
+    const target = input instanceof Request ? input.url : input.toString();
+    return new URL(target, currentOrigin).origin === currentOrigin;
+  } catch {
+    return false;
+  }
 }
