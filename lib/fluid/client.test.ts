@@ -4,10 +4,22 @@ import {
   deactivateCompanyByInstallation,
   upsertCompany,
 } from "../repositories/companies";
-import { createFluidClientForInstallation } from "./client";
+import { createFluidClientForInstallation, FluidClient } from "./client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("FluidClient", () => {
+  it("accepts an empty successful delete response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 })),
+    );
+    const fluid = new FluidClient("dit_installation", "https://api.example");
+
+    await expect(fluid.deleteWebhook("webhook-123")).resolves.toBeUndefined();
+  });
 });
 
 describe("createFluidClientForInstallation", () => {

@@ -77,12 +77,13 @@ export class FluidClient {
       },
     });
 
+    const responseBody = await response.text();
     if (!response.ok) {
-      const errorBody = await response.text();
-      throw new FluidApiError(response.status, path, errorBody);
+      throw new FluidApiError(response.status, path, responseBody);
     }
+    if (responseBody === "") return undefined as T;
 
-    return response.json() as Promise<T>;
+    return JSON.parse(responseBody) as T;
   }
 
   // --- Webhooks ---
