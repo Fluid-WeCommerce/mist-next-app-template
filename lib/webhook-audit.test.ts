@@ -37,4 +37,28 @@ describe("redactWebhookPayload", () => {
     expect(payload.payload.company.authentication_token).toBe("dit_secret");
     expect(payload.payload.company.credentials.exchange_token).toBe("dex_secret");
   });
+
+  it("redacts credentials nested inside arrays", () => {
+    const payload = {
+      deliveries: [
+        {
+          credentials: [
+            { authentication_token: "dit_secret" },
+            { exchange_token: "dex_secret" },
+          ],
+        },
+      ],
+    };
+
+    expect(redactWebhookPayload(payload)).toEqual({
+      deliveries: [
+        {
+          credentials: [
+            { authentication_token: "[REDACTED]" },
+            { exchange_token: "[REDACTED]" },
+          ],
+        },
+      ],
+    });
+  });
 });
