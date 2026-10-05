@@ -67,6 +67,20 @@ export class FluidClient {
     this.baseUrl = baseUrl || getFluidApiUrl();
   }
 
+  // Resolve the store UUID from this installation's DIT, never viewer input.
+  async getServingStore(companyId: number): Promise<string> {
+    const body = await this.request<{ data?: { company?: { id?: unknown; uuid_v7?: unknown } } }>(
+      "/api/company/v1/companies/me",
+      { signal: AbortSignal.timeout(5000), redirect: "error" },
+    );
+    const company = body.data?.company;
+    if (company?.id !== companyId || typeof company.uuid_v7 !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(company.uuid_v7)) {
+      throw new Error("Fluid serving store could not be resolved");
+    }
+    return `urn:fluid:store:${company.uuid_v7}`;
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...options,
