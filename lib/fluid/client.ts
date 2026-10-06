@@ -68,6 +68,7 @@ export class FluidClient {
   }
 
   // Resolve the store UUID from this installation's DIT, never viewer input.
+  // Needs the `settings` scope and fluid-commerce/fluid#25091 (uuid_v7 on companies#me).
   async getServingStore(companyId: number): Promise<string> {
     const body = await this.request<{ data?: { company?: { id?: unknown; uuid_v7?: unknown } } }>(
       "/api/company/v1/companies/me",

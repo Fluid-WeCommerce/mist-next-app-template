@@ -120,6 +120,10 @@ id matches the installation before using that UUID as expected dest. Refuse
 missing/mismatched store identity or denied API access; never trust the token's
 own dest or a browser-supplied store id as the expected store.
 
+`companies/me` returns `uuid_v7` only once fluid-commerce/fluid#25091 is
+deployed, and only to an installation that holds the `settings` scope (without
+it Fluid answers 403). Either way the route fails closed with a 401.
+
 On first load the route verifies the URL token and issues this app's own
 120-second signed HttpOnly, Secure, SameSite=None, Partitioned cookie, bound to
 installation and actor/store. The cookie contains no Fluid JWT. Later full

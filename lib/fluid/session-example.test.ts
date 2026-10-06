@@ -93,7 +93,8 @@ it("rejects a cookie minted for a different installation, whether sent under its
   expect(underTargetName.status).toBe(401);
 });
 it("only resolves expected store with the installation DIT and rejects malformed/mismatched API identity", async () => {
-  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { company: { id: 101, uuid_v7: storeId } } })));
+  // Mirrors Fluid's companies#me envelope (V2::CompanySerializer, uuid_v7 added in fluid-commerce/fluid#25091).
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "success", data: { company: { id: 101, uuid_v7: storeId, name: "Primex" } } })));
   vi.stubGlobal("fetch", fetcher);
   const client = new FluidClient("test-dit", "https://api.fluid.test");
   expect(await client.getServingStore(101)).toBe(store);
