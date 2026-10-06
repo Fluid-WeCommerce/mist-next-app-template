@@ -23,7 +23,7 @@ customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 | `lib/config/droplet.config.ts` | Declare the webhooks, callbacks, and drop zones your droplet needs — enabled entries are auto-registered on install and cleaned up on uninstall. |
 | `proxy.ts` / `app/embed-guard.tsx` | Restrict framing to Fluid (CSP `frame-ancestors`) and an optional client guard for embed-only pages. |
 
-There is no viewer-authentication implementation in this template. Embedded routes use the DRI installation context described below for interim tenancy and DIT selection. DRI is not viewer authentication; OAuth and signed session tokens are the planned replacement.
+**Admin pages authorize by `dri` through `resolveFluidInstallation()` until Fluid supplies `session_token`. Do not invent another viewer JWT, OAuth login gate, or token that Fluid never sends.** Once `session_token` is available, verify it on the server with `verifySessionToken()` below. The DRI resolver still selects the active installation and its backend DIT; the signed token adds viewer identity. The short-lived app session cookie described below is a server-side session derived from a verified Fluid `session_token`, not a new viewer token, so it does not contradict this rule.
 
 ## Install lifecycle
 
@@ -98,11 +98,50 @@ Never fall back to `fluid_shop`, a client-provided company id, a shared
 environment token, or the only row in the database. Scope every local read and
 write through `context.installation` / `context.companyId`.
 
-This is an interim tenancy and credential-selection contract. A holder of a
-valid DRI can still invoke the Mist backend. The future OAuth/session-token
-implementation must replace the resolver's unverified request input with the
-signed DRI claim and replace DIT selection behind the client factory; route
-business logic should not need another rewrite.
+A holder of a valid DRI can invoke routes using only this interim contract. When
+viewer identity is required, resolve the installation first and then verify a
+Fluid session token bound to its trusted store. Session tokens do not contain a
+signed DRI claim and do not replace the installation's backend DIT.
+
+## Verified viewer and later documents
+
+`lib/fluid/session-token.ts` reads Mist's three production-only values:
+`FLUID_SESSION_TOKEN_SIGNING_SECRET`, `FLUID_OAUTH_CLIENT_ID`, and
+`FLUID_SESSION_TOKEN_ISSUER`. Missing configuration fails closed. The helper
+checks HS256, a constant-time signature, exact issuer and audience, mandatory
+integer exp/nbf with exactly 30 seconds of clock skew, the serving store's dest,
+and nonblank sub. Repeated jti is allowed. The verified result is identity only;
+never send a Fluid viewer JWT to a Fluid API. Use the installation DIT instead.
+
+`/embed/session-example?dri=...&session_token=...` is a working server route.
+It resolves the active installation, asks `/api/company/v1/companies/me` using
+that installation's DIT for `uuid_v7`, and checks the returned numeric company
+id matches the installation before using that UUID as expected dest. Refuse
+missing/mismatched store identity or denied API access; never trust the token's
+own dest or a browser-supplied store id as the expected store.
+
+`companies/me` returns `uuid_v7` only once fluid-commerce/fluid#25091 is
+deployed, and only to an installation that holds the `settings` scope (without
+it Fluid answers 403). Either way the route fails closed with a 401.
+
+On first load the route verifies the URL token and issues this app's own
+120-second signed HttpOnly, Secure, SameSite=None, Partitioned cookie, bound to
+installation and actor/store. The cookie contains no Fluid JWT. Later full
+documents use that short app session and re-resolve the active installation and
+store; they need no URL token. The example strips session_token with
+history.replaceState before resources load and sends no-referrer and no-store,
+including on errors. Keep the dri reference on this example's own links.
+
+The URL `session_token` is only for the first server request. Keep the iframe
+`src` stable as the app navigates. Every later document works only through the
+short 120-second app session cookie minted on that first request; it needs no
+URL token. If that cookie is missing or expired — including because the
+browser restricts embedded cookies — the page must ask the viewer to reload the
+page from Fluid, since a fresh Fluid mount carries a new `session_token`. Never
+bypass verification, and never reuse a URL token, a `localStorage` token, or a
+parent admin JWT in its place. This example deliberately returns 401 until that
+reload happens; adapt its verified token exchange to your app's routes and CSRF
+policy.
 
 ## Checks
 
@@ -138,6 +177,9 @@ project's env vars are set automatically:
 | `FLUID_DROPLET_SECRET` | Compatibility fallback for lifecycle webhook authentication on existing Mist deployments. It is not viewer authentication and is not accepted for regular company events. |
 | `FLUID_WEBHOOK_AUTH_TOKEN` | Bootstrap secret for install/uninstall lifecycle webhooks. It is not accepted for regular company events. New Mist deployments set this explicitly; older lifecycle registrations fall back to `FLUID_DROPLET_SECRET`. |
 | `FLUID_BASE_URL` | The Fluid app's base URL. |
+| `FLUID_SESSION_TOKEN_SIGNING_SECRET` | Linked droplet's session-token verification key (server only, production only). |
+| `FLUID_OAUTH_CLIENT_ID` | Expected session-token audience (production only). |
+| `FLUID_SESSION_TOKEN_ISSUER` | Expected session-token issuer (production only). |
 
 Push to `main` and Vercel deploys automatically. The Mist CLI (`fluid
 droplet mist push`) handles the git plumbing for you.
