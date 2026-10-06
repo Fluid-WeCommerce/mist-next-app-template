@@ -32,6 +32,6 @@ export async function GET(request: NextRequest) {
     });
     return response;
   } catch {
-    return new NextResponse(`<!doctype html><html><head>${stripToken}</head><body><p>Viewer identity unavailable. Initialize the Fluid bridge and send a fresh bridge token to a verified application session endpoint, or reload the embed from Fluid.</p></body></html>`, { status: 401, headers });
+    return new NextResponse(`<!doctype html><html><head>${stripToken}</head><body><p>Viewer identity unavailable. Reload this page from Fluid.</p></body></html>`, { status: 401, headers });
   }
 }

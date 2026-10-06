@@ -63,6 +63,35 @@ it("fails closed without a viewer, for a wrong store and after installation revo
   expect(denied.status).toBe(401);
   expect(await denied.text()).not.toContain(token());
 });
+it("fails closed when the Fluid lookup for the serving store is denied", async () => {
+  getStore.mockRejectedValue(new Error("403: forbidden"));
+  const response = await GET(new NextRequest(`https://app.test/embed/session-example?dri=${dri}&session_token=${token()}`));
+  expect(response.status).toBe(401);
+  expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(response.headers.get("set-cookie")).toBeNull();
+});
+it("rejects a cookie minted for a different installation, whether sent under its own name or the target's name", async () => {
+  const driB = "dri_00000000000000000000000000000002";
+  const storeB = `urn:fluid:store:${storeId}b`;
+  resolve.mockImplementation(async (req: Request) => {
+    const requestHeaders = new Headers(req.headers);
+    const id = requestHeaders.get("X-Fluid-Installation");
+    if (id === driB) return { installationId: driB, companyId: 102, installation: { authenticationToken: "test-dit-b" } };
+    return { installationId: dri, companyId: 101, installation: { authenticationToken: "test-dit" } };
+  });
+  getStore.mockImplementation(async (companyId: number) => (companyId === 102 ? storeB : store));
+  const first = await GET(new NextRequest(`https://app.test/embed/session-example?dri=${dri}&session_token=${token()}`));
+  expect(first.status).toBe(200);
+  const cookieA = first.cookies.get(appSessionCookieName(dri))!;
+  const underOwnName = await GET(new NextRequest(`https://app.test/embed/session-example?dri=${driB}`, {
+    headers: { Cookie: `${cookieA.name}=${cookieA.value}` },
+  }));
+  expect(underOwnName.status).toBe(401);
+  const underTargetName = await GET(new NextRequest(`https://app.test/embed/session-example?dri=${driB}`, {
+    headers: { Cookie: `${appSessionCookieName(driB)}=${cookieA.value}` },
+  }));
+  expect(underTargetName.status).toBe(401);
+});
 it("only resolves expected store with the installation DIT and rejects malformed/mismatched API identity", async () => {
   const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { company: { id: 101, uuid_v7: storeId } } })));
   vi.stubGlobal("fetch", fetcher);

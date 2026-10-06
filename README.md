@@ -23,7 +23,7 @@ customer repo as a one-shot snapshot via `POST /repos/{this}/generate`.
 | `lib/config/droplet.config.ts` | Declare the webhooks, callbacks, and drop zones your droplet needs — enabled entries are auto-registered on install and cleaned up on uninstall. |
 | `proxy.ts` / `app/embed-guard.tsx` | Restrict framing to Fluid (CSP `frame-ancestors`) and an optional client guard for embed-only pages. |
 
-**Admin pages authorize by `dri` through `resolveFluidInstallation()` until Fluid supplies `session_token`. Do not invent another viewer JWT, OAuth login gate, or token that Fluid never sends.** Once `session_token` is available, verify it on the server with `verifySessionToken()` below. The DRI resolver still selects the active installation and its backend DIT; the signed token adds viewer identity.
+**Admin pages authorize by `dri` through `resolveFluidInstallation()` until Fluid supplies `session_token`. Do not invent another viewer JWT, OAuth login gate, or token that Fluid never sends.** Once `session_token` is available, verify it on the server with `verifySessionToken()` below. The DRI resolver still selects the active installation and its backend DIT; the signed token adds viewer identity. The short-lived app session cookie described below is a server-side session derived from a verified Fluid `session_token`, not a new viewer token, so it does not contradict this rule.
 
 ## Install lifecycle
 
@@ -128,17 +128,16 @@ store; they need no URL token. The example strips session_token with
 history.replaceState before resources load and sends no-referrer and no-store,
 including on errors. Keep the dri reference on this example's own links.
 
-The URL session_token is only for the first server request. Keep the iframe src
-stable as the app navigates. Initialize S13's Fluid bridge client on **every**
-document to receive current context and obtain fresh bridge tokens; do not reuse
-a URL token, localStorage token, or a parent admin JWT. A server-rendered later
-page must use its own short app session as here, or render a bridge-first recovery
-page that verifies the fresh bridge token on its own backend before showing
-private data. Browsers may restrict embedded cookies: absence or expiration
-must recover through the bridge or a fresh Fluid mount, not bypass verification.
-This example deliberately returns 401 until recovery; adapt its verified token
-exchange to your app's routes and CSRF policy. No SDK package is published by
-this template change (the S14 package cut remains separate).
+The URL `session_token` is only for the first server request. Keep the iframe
+`src` stable as the app navigates. Every later document works only through the
+short 120-second app session cookie minted on that first request; it needs no
+URL token. If that cookie is missing or expired — including because the
+browser restricts embedded cookies — the page must ask the viewer to reload the
+page from Fluid, since a fresh Fluid mount carries a new `session_token`. Never
+bypass verification, and never reuse a URL token, a `localStorage` token, or a
+parent admin JWT in its place. This example deliberately returns 401 until that
+reload happens; adapt its verified token exchange to your app's routes and CSRF
+policy.
 
 ## Checks
 
