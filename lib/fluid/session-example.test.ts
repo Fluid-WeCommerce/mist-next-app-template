@@ -92,6 +92,25 @@ it("rejects a cookie minted for a different installation, whether sent under its
   }));
   expect(underTargetName.status).toBe(401);
 });
+it("rejects another installation's cookie even when both installations serve the same store", async () => {
+  // Same company and store, so only the installation binding can tell them apart.
+  const driB = "dri_00000000000000000000000000000002";
+  resolve.mockImplementation(async (req: Request) => {
+    const id = new Headers(req.headers).get("X-Fluid-Installation");
+    return { installationId: id === driB ? driB : dri, companyId: 101, installation: { authenticationToken: "test-dit" } };
+  });
+  expect(appSessionCookieName(driB)).not.toBe(appSessionCookieName(dri));
+  const first = await GET(new NextRequest(`https://app.test/embed/session-example?dri=${dri}&session_token=${token()}`));
+  const cookieA = first.cookies.get(appSessionCookieName(dri))!;
+  const replayed = await GET(new NextRequest(`https://app.test/embed/session-example?dri=${driB}`, {
+    headers: { Cookie: `${appSessionCookieName(driB)}=${cookieA.value}` },
+  }));
+  expect(replayed.status).toBe(401);
+  const ownA = await GET(new NextRequest(`https://app.test/embed/session-example?dri=${dri}`, {
+    headers: { Cookie: `${cookieA.name}=${cookieA.value}` },
+  }));
+  expect(ownA.status).toBe(200);
+});
 it("only resolves expected store with the installation DIT and rejects malformed/mismatched API identity", async () => {
   // Mirrors Fluid's companies#me envelope (V2::CompanySerializer, uuid_v7 added in fluid-commerce/fluid#25091).
   const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "success", data: { company: { id: 101, uuid_v7: storeId, name: "Primex" } } })));
